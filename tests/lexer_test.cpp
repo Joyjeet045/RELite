@@ -33,13 +33,13 @@ void expectTypes(const std::string& src, const std::vector<TokenType>& expected)
 }
 
 void testSelect() {
-    expectTypes("SELECT * FROM users;", {
+    expectTypes("FETCH * FROM users;", {
         TokenType::SELECT, TokenType::STAR, TokenType::FROM,
         TokenType::IDENTIFIER, TokenType::SEMICOLON, TokenType::END_OF_FILE});
 }
 
 void testKeywordsCaseInsensitive() {
-    expectTypes("select From wHeRe", {
+    expectTypes("fetch From wHeN", {
         TokenType::SELECT, TokenType::FROM, TokenType::WHERE, TokenType::END_OF_FILE});
 }
 
@@ -50,7 +50,7 @@ void testOperators() {
 }
 
 void testLiterals() {
-    auto tokens = lex("INSERT INTO t VALUES (42, 'Alice', TRUE);");
+    auto tokens = lex("PUT INTO t VALUES (42, 'Alice', TRUE);");
     bool sawInt = false, sawStr = false, sawBool = false;
     for (const auto& t : tokens) {
         if (t.type == TokenType::INTEGER_LITERAL && t.lexeme == "42") sawInt = true;
@@ -68,7 +68,7 @@ void testEscapedQuoteInString() {
 }
 
 void testLineComment() {
-    expectTypes("SELECT -- comment here\n *", {
+    expectTypes("FETCH -- comment here\n *", {
         TokenType::SELECT, TokenType::STAR, TokenType::END_OF_FILE});
 }
 

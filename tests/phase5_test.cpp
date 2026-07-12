@@ -49,92 +49,92 @@ void run() {
     semantic::Catalog::instance().reset();
     Harness h("prqlite_test_p5.db", "prqlite_test_p5.wal");
 
-    h.run("CREATE TABLE emp (id INT, name TEXT, dept TEXT, salary INT);");
-    h.run("INSERT INTO emp VALUES (1,'Alice','eng',100),(2,'Bob','eng',200),"
+    h.run("BUILD RELATION emp (id INT, name TEXT, dept TEXT, salary INT);");
+    h.run("PUT INTO emp VALUES (1,'Alice','eng',100),(2,'Bob','eng',200),"
           "(3,'Carol','sales',150),(4,'Dave','sales',NULL);");
 
     // Aggregates.
-    assert(scalarInt(h.run("SELECT COUNT(*) FROM emp;")) == 4);
-    assert(scalarInt(h.run("SELECT SUM(salary) FROM emp;")) == 450);  // NULL ignored
-    assert(scalarInt(h.run("SELECT MIN(salary) FROM emp;")) == 100);
-    assert(scalarInt(h.run("SELECT MAX(salary) FROM emp;")) == 200);
-    assert(scalarInt(h.run("SELECT COUNT(salary) FROM emp;")) == 3);  // NULL not counted
+    assert(scalarInt(h.run("FETCH COUNT(*) FROM emp;")) == 4);
+    assert(scalarInt(h.run("FETCH SUM(salary) FROM emp;")) == 450);  // NULL ignored
+    assert(scalarInt(h.run("FETCH MIN(salary) FROM emp;")) == 100);
+    assert(scalarInt(h.run("FETCH MAX(salary) FROM emp;")) == 200);
+    assert(scalarInt(h.run("FETCH COUNT(salary) FROM emp;")) == 3);  // NULL not counted
 
     // GROUP BY.
-    auto grouped = h.run("SELECT dept, COUNT(*) FROM emp GROUP BY dept;");
+    auto grouped = h.run("FETCH dept, COUNT(*) FROM emp GROUP BY dept;");
     assert(grouped.columns.size() == 2 && grouped.rows.size() == 2);
     assert(grouped.rows[0][0].textValue == "eng" && grouped.rows[0][1].intValue == 2);
 
     // HAVING (on the grouping column).
-    auto having = h.run("SELECT dept FROM emp GROUP BY dept HAVING dept = 'sales';");
+    auto having = h.run("FETCH dept FROM emp GROUP BY dept HAVING dept = 'sales';");
     assert(having.rows.size() == 1 && having.rows[0][0].textValue == "sales");
 
     // NULL handling.
-    assert(h.run("SELECT id FROM emp WHERE salary IS NULL;").rows.size() == 1);
-    assert(h.run("SELECT id FROM emp WHERE salary IS NOT NULL;").rows.size() == 3);
+    assert(h.run("FETCH id FROM emp WHEN salary IS NULL;").rows.size() == 1);
+    assert(h.run("FETCH id FROM emp WHEN salary IS NOT NULL;").rows.size() == 3);
 
     // IN / NOT IN.
-    assert(h.run("SELECT id FROM emp WHERE id IN (1, 2);").rows.size() == 2);
-    assert(h.run("SELECT id FROM emp WHERE id NOT IN (1, 2);").rows.size() == 2);
+    assert(h.run("FETCH id FROM emp WHEN id IN (1, 2);").rows.size() == 2);
+    assert(h.run("FETCH id FROM emp WHEN id NOT IN (1, 2);").rows.size() == 2);
 
     // BETWEEN.
-    assert(h.run("SELECT id FROM emp WHERE id BETWEEN 2 AND 3;").rows.size() == 2);
+    assert(h.run("FETCH id FROM emp WHEN id BETWEEN 2 AND 3;").rows.size() == 2);
 
     // LIKE.
-    auto like = h.run("SELECT name FROM emp WHERE name LIKE 'A%';");
+    auto like = h.run("FETCH name FROM emp WHEN name LIKE 'A%';");
     assert(like.rows.size() == 1 && like.rows[0][0].textValue == "Alice");
-    assert(h.run("SELECT name FROM emp WHERE name LIKE '_o%';").rows.size() == 1);  // Bob
+    assert(h.run("FETCH name FROM emp WHEN name LIKE '_o%';").rows.size() == 1);  // Bob
 
-    // ORDER BY + LIMIT.
-    auto ordered = h.run("SELECT id FROM emp ORDER BY id DESC;");
+    // SORT BY + TAKE.
+    auto ordered = h.run("FETCH id FROM emp SORT BY id DESC;");
     assert(ordered.rows.size() == 4 && ordered.rows[0][0].intValue == 4);
-    auto limited = h.run("SELECT id FROM emp ORDER BY id ASC LIMIT 2;");
+    auto limited = h.run("FETCH id FROM emp SORT BY id ASC TAKE 2;");
     assert(limited.rows.size() == 2 && limited.rows[0][0].intValue == 1 &&
            limited.rows[1][0].intValue == 2);
 
-    // UPDATE.
-    h.run("UPDATE emp SET salary = 175 WHERE id = 4;");
-    assert(scalarInt(h.run("SELECT salary FROM emp WHERE id = 4;")) == 175);
-    assert(h.run("SELECT id FROM emp WHERE salary IS NULL;").rows.empty());
+    // MODIFY.
+    h.run("MODIFY emp SET salary = 175 WHEN id = 4;");
+    assert(scalarInt(h.run("FETCH salary FROM emp WHEN id = 4;")) == 175);
+    assert(h.run("FETCH id FROM emp WHEN salary IS NULL;").rows.empty());
 
-    // Transactions: rollback an INSERT.
-    int before = scalarInt(h.run("SELECT COUNT(*) FROM emp;"));
-    h.run("BEGIN;");
-    h.run("INSERT INTO emp VALUES (5,'Eve','eng',300);");
-    assert(scalarInt(h.run("SELECT COUNT(*) FROM emp;")) == before + 1);
-    h.run("ROLLBACK;");
-    assert(scalarInt(h.run("SELECT COUNT(*) FROM emp;")) == before);
+    // Transactions: undo a PUT.
+    int before = scalarInt(h.run("FETCH COUNT(*) FROM emp;"));
+    h.run("START;");
+    h.run("PUT INTO emp VALUES (5,'Eve','eng',300);");
+    assert(scalarInt(h.run("FETCH COUNT(*) FROM emp;")) == before + 1);
+    h.run("UNDO;");
+    assert(scalarInt(h.run("FETCH COUNT(*) FROM emp;")) == before);
 
-    // Transactions: rollback a DELETE.
-    h.run("BEGIN;");
-    h.run("DELETE FROM emp WHERE id = 1;");
-    assert(h.run("SELECT id FROM emp WHERE id = 1;").rows.empty());
-    h.run("ROLLBACK;");
-    assert(h.run("SELECT id FROM emp WHERE id = 1;").rows.size() == 1);
+    // Transactions: undo a REMOVE.
+    h.run("START;");
+    h.run("REMOVE FROM emp WHEN id = 1;");
+    assert(h.run("FETCH id FROM emp WHEN id = 1;").rows.empty());
+    h.run("UNDO;");
+    assert(h.run("FETCH id FROM emp WHEN id = 1;").rows.size() == 1);
 
-    // Transactions: commit an UPDATE.
-    h.run("BEGIN;");
-    h.run("UPDATE emp SET dept = 'mgmt' WHERE id = 1;");
-    h.run("COMMIT;");
-    auto committed = h.run("SELECT dept FROM emp WHERE id = 1;");
+    // Transactions: save a MODIFY.
+    h.run("START;");
+    h.run("MODIFY emp SET dept = 'mgmt' WHEN id = 1;");
+    h.run("SAVE;");
+    auto committed = h.run("FETCH dept FROM emp WHEN id = 1;");
     assert(committed.rows[0][0].textValue == "mgmt");
 
-    // INNER JOIN. emp.dept values are now {mgmt, eng, sales, sales}.
-    h.run("CREATE TABLE dept (dname TEXT, floor INT);");
-    h.run("INSERT INTO dept VALUES ('eng', 3), ('sales', 1), ('mgmt', 5);");
+    // LINK (inner join). emp.dept values are now {mgmt, eng, sales, sales}.
+    h.run("BUILD RELATION dept (dname TEXT, floor INT);");
+    h.run("PUT INTO dept VALUES ('eng', 3), ('sales', 1), ('mgmt', 5);");
     auto joined =
-        h.run("SELECT emp.name, dept.floor FROM emp JOIN dept ON emp.dept = dept.dname;");
+        h.run("FETCH emp.name, dept.floor FROM emp LINK dept ON emp.dept = dept.dname;");
     assert(joined.columns.size() == 2 && joined.rows.size() == 4);
     auto joinFiltered = h.run(
-        "SELECT emp.name FROM emp INNER JOIN dept ON emp.dept = dept.dname "
-        "WHERE dept.floor = 1;");
+        "FETCH emp.name FROM emp LINK dept ON emp.dept = dept.dname "
+        "WHEN dept.floor = 1;");
     assert(joinFiltered.rows.size() == 2);  // both sales employees
-    h.run("DROP TABLE dept;");
+    h.run("DISCARD RELATION dept;");
 
-    // DROP INDEX / DROP TABLE.
-    h.run("CREATE INDEX emp_id ON emp (id);");
-    h.run("DROP INDEX emp_id;");
-    h.run("DROP TABLE emp;");
+    // DISCARD INDEX / DISCARD RELATION.
+    h.run("BUILD INDEX emp_id ON emp (id);");
+    h.run("DISCARD INDEX emp_id;");
+    h.run("DISCARD RELATION emp;");
     assert(!semantic::Catalog::instance().hasTable("emp"));
 
     semantic::Catalog::instance().reset();

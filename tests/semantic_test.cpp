@@ -44,7 +44,7 @@ void expectSemanticError(const std::string& sql) {
 }
 
 void testCreateBindsAndRegisters() {
-    auto node = analyze("CREATE TABLE friend (id INT, name VARCHAR(16), active BOOL);");
+    auto node = analyze("BUILD RELATION friend (id INT, name VARCHAR(16), active BOOL);");
     auto* c = dynamic_cast<CreateStatement*>(node.get());
     assert(c != nullptr && c->tableId >= 0);
     assert(Catalog::instance().hasTable("friend"));
@@ -54,34 +54,34 @@ void testCreateBindsAndRegisters() {
 }
 
 void testDuplicateTableRejected() {
-    expectSemanticError("CREATE TABLE friend (id INT);");
+    expectSemanticError("BUILD RELATION friend (id INT);");
 }
 
 void testDuplicateColumnRejected() {
-    expectSemanticError("CREATE TABLE dup (id INT, id BOOL);");
+    expectSemanticError("BUILD RELATION dup (id INT, id BOOL);");
 }
 
 void testInsertValidBinds() {
-    auto node = analyze("INSERT INTO friend VALUES (1, 'garv', TRUE);");
+    auto node = analyze("PUT INTO friend VALUES (1, 'garv', TRUE);");
     auto* ins = dynamic_cast<InsertStatement*>(node.get());
     assert(ins != nullptr && ins->tableId >= 0);
 }
 
 void testInsertArityMismatch() {
-    expectSemanticError("INSERT INTO friend VALUES (1, 'garv');");
+    expectSemanticError("PUT INTO friend VALUES (1, 'garv');");
 }
 
 void testInsertTypeMismatch() {
     // id is INT but given a string literal.
-    expectSemanticError("INSERT INTO friend VALUES ('nope', 'garv', TRUE);");
+    expectSemanticError("PUT INTO friend VALUES ('nope', 'garv', TRUE);");
 }
 
 void testInsertUnknownColumn() {
-    expectSemanticError("INSERT INTO friend (missing) VALUES (1);");
+    expectSemanticError("PUT INTO friend (missing) VALUES (1);");
 }
 
 void testSelectBindsColumns() {
-    auto node = analyze("SELECT id, name FROM friend WHERE name = 'garv' OR id = 5;");
+    auto node = analyze("FETCH id, name FROM friend WHEN name = 'garv' OR id = 5;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr && s->tableId >= 0);
     assert(s->columns[0]->columnIndex == 0);  // id
@@ -90,46 +90,46 @@ void testSelectBindsColumns() {
 }
 
 void testSelectBoolColumnPredicate() {
-    auto node = analyze("SELECT * FROM friend WHERE active;");
+    auto node = analyze("FETCH * FROM friend WHEN active;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr);
     assert(s->where->resolvedType == DataType::Bool);
 }
 
 void testSelectUnknownTable() {
-    expectSemanticError("SELECT * FROM nope;");
+    expectSemanticError("FETCH * FROM nope;");
 }
 
 void testSelectUnknownColumn() {
-    expectSemanticError("SELECT missing FROM friend;");
+    expectSemanticError("FETCH missing FROM friend;");
 }
 
 void testWhereNonBooleanRejected() {
     // A bare INT column is not a valid predicate.
-    expectSemanticError("SELECT * FROM friend WHERE id;");
+    expectSemanticError("FETCH * FROM friend WHEN id;");
 }
 
 void testWhereTypeMismatchRejected() {
-    expectSemanticError("SELECT * FROM friend WHERE id = 'garv';");
+    expectSemanticError("FETCH * FROM friend WHEN id = 'garv';");
 }
 
 void testUnknownQualifierRejected() {
-    expectSemanticError("SELECT other.id FROM friend;");
+    expectSemanticError("FETCH other.id FROM friend;");
 }
 
 void testCreateIndexBinds() {
-    auto node = analyze("CREATE INDEX by_name ON friend (name);");
+    auto node = analyze("BUILD INDEX by_name ON friend (name);");
     auto* ci = dynamic_cast<CreateIdxStatement*>(node.get());
     assert(ci != nullptr && ci->columnIndex == 1);
     assert(Catalog::instance().hasIndex("by_name"));
 }
 
 void testCreateIndexUnknownColumn() {
-    expectSemanticError("CREATE INDEX bad ON friend (missing);");
+    expectSemanticError("BUILD INDEX bad ON friend (missing);");
 }
 
 void testDeleteBinds() {
-    auto node = analyze("DELETE FROM friend WHERE id = 3;");
+    auto node = analyze("REMOVE FROM friend WHEN id = 3;");
     auto* d = dynamic_cast<DeleteStatement*>(node.get());
     assert(d != nullptr && d->tableId >= 0);
     assert(d->where->resolvedType == DataType::Bool);

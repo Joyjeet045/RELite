@@ -77,30 +77,30 @@ void testIndexedQueries() {
     std::string path = "prqlite_test_index.db";
     vm::StorageEngine se(path, /*truncate=*/true);
 
-    exec(se, "CREATE TABLE t (id INT, name TEXT);");
+    exec(se, "BUILD RELATION t (id INT, name TEXT);");
     for (int i = 0; i < 50; ++i) {
-        exec(se, "INSERT INTO t VALUES (" + std::to_string(i) + ", 'n" +
+        exec(se, "PUT INTO t VALUES (" + std::to_string(i) + ", 'n" +
                      std::to_string(i) + "');");
     }
     // Build index after data exists (backfill path).
-    exec(se, "CREATE INDEX t_id ON t (id);");
+    exec(se, "BUILD INDEX t_id ON t (id);");
 
     // Point lookup via index.
-    auto q = exec(se, "SELECT name FROM t WHERE id = 25;");
+    auto q = exec(se, "FETCH name FROM t WHEN id = 25;");
     assert(q.rows.size() == 1 && q.rows[0][0].textValue == "n25");
 
     // Insert after index exists (maintenance path).
-    exec(se, "INSERT INTO t VALUES (100, 'hundred');");
-    auto q2 = exec(se, "SELECT name FROM t WHERE id = 100;");
+    exec(se, "PUT INTO t VALUES (100, 'hundred');");
+    auto q2 = exec(se, "FETCH name FROM t WHEN id = 100;");
     assert(q2.rows.size() == 1 && q2.rows[0][0].textValue == "hundred");
 
     // Delete maintains index.
-    exec(se, "DELETE FROM t WHERE id = 25;");
-    auto q3 = exec(se, "SELECT name FROM t WHERE id = 25;");
+    exec(se, "REMOVE FROM t WHEN id = 25;");
+    auto q3 = exec(se, "FETCH name FROM t WHEN id = 25;");
     assert(q3.rows.empty());
 
     // Absent key.
-    auto q4 = exec(se, "SELECT name FROM t WHERE id = 9999;");
+    auto q4 = exec(se, "FETCH name FROM t WHEN id = 9999;");
     assert(q4.rows.empty());
 
     semantic::Catalog::instance().reset();

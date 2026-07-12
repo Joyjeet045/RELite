@@ -29,48 +29,48 @@ void run() {
     std::string path = "prqlite_test_engine.db";
     vm::StorageEngine se(path, /*truncate=*/true);
 
-    exec(se, "CREATE TABLE friend (id INT, name TEXT, active BOOL);");
-    exec(se, "INSERT INTO friend VALUES (1, 'alice', TRUE), (2, 'bob', FALSE), (3, 'carol', TRUE);");
+    exec(se, "BUILD RELATION friend (id INT, name TEXT, active BOOL);");
+    exec(se, "PUT INTO friend VALUES (1, 'alice', TRUE), (2, 'bob', FALSE), (3, 'carol', TRUE);");
 
-    // SELECT *
-    auto all = exec(se, "SELECT * FROM friend;");
+    // FETCH *
+    auto all = exec(se, "FETCH * FROM friend;");
     assert(all.isQuery);
     assert(all.columns.size() == 3 && all.columns[0] == "id");
     assert(all.rows.size() == 3);
 
-    // Projection + WHERE equality.
-    auto one = exec(se, "SELECT name FROM friend WHERE id = 2;");
+    // Projection + WHEN equality.
+    auto one = exec(se, "FETCH name FROM friend WHEN id = 2;");
     assert(one.rows.size() == 1);
     assert(one.columns.size() == 1 && one.columns[0] == "name");
     assert(one.rows[0][0].textValue == "bob");
 
     // Boolean column predicate + OR.
-    auto actives = exec(se, "SELECT id FROM friend WHERE active OR id = 2;");
+    auto actives = exec(se, "FETCH id FROM friend WHEN active OR id = 2;");
     assert(actives.rows.size() == 3);
 
     // Comparison operators.
-    auto gt = exec(se, "SELECT id FROM friend WHERE id >= 2;");
+    auto gt = exec(se, "FETCH id FROM friend WHEN id >= 2;");
     assert(gt.rows.size() == 2);
 
-    // NULL via partial INSERT column list.
-    exec(se, "INSERT INTO friend (id, name) VALUES (4, 'dave');");
-    auto nullCheck = exec(se, "SELECT active FROM friend WHERE id = 4;");
+    // NULL via partial PUT column list.
+    exec(se, "PUT INTO friend (id, name) VALUES (4, 'dave');");
+    auto nullCheck = exec(se, "FETCH active FROM friend WHEN id = 4;");
     assert(nullCheck.rows.size() == 1);
     assert(nullCheck.rows[0][0].isNull());
 
     // NULL comparisons are never true.
-    auto nullCmp = exec(se, "SELECT id FROM friend WHERE active = TRUE;");
+    auto nullCmp = exec(se, "FETCH id FROM friend WHEN active = TRUE;");
     assert(nullCmp.rows.size() == 2);  // rows 1 and 3, not the NULL row
 
-    // DELETE with predicate.
-    auto del = exec(se, "DELETE FROM friend WHERE id = 2;");
-    assert(del.message == "DELETE 1");
-    auto afterDel = exec(se, "SELECT * FROM friend;");
+    // REMOVE with predicate.
+    auto del = exec(se, "REMOVE FROM friend WHEN id = 2;");
+    assert(del.message == "REMOVE 1");
+    auto afterDel = exec(se, "FETCH * FROM friend;");
     assert(afterDel.rows.size() == 3);
 
-    // DELETE all.
-    exec(se, "DELETE FROM friend;");
-    auto empty = exec(se, "SELECT * FROM friend;");
+    // REMOVE all.
+    exec(se, "REMOVE FROM friend;");
+    auto empty = exec(se, "FETCH * FROM friend;");
     assert(empty.rows.empty());
 
     semantic::Catalog::instance().reset();

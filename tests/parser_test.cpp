@@ -18,7 +18,7 @@ ASTNodePtr parse(const std::string& sql) {
 }
 
 void testCreateTable() {
-    auto node = parse("CREATE TABLE friend (id INT, name VARCHAR(32), active BOOL);");
+    auto node = parse("BUILD RELATION friend (id INT, name VARCHAR(32), active BOOL);");
     auto* c = dynamic_cast<CreateStatement*>(node.get());
     assert(c != nullptr);
     assert(c->table == "friend");
@@ -29,7 +29,7 @@ void testCreateTable() {
 }
 
 void testCreateIndex() {
-    auto node = parse("CREATE INDEX by_name ON friend (name);");
+    auto node = parse("BUILD INDEX by_name ON friend (name);");
     auto* ci = dynamic_cast<CreateIdxStatement*>(node.get());
     assert(ci != nullptr);
     assert(ci->indexName == "by_name");
@@ -38,7 +38,7 @@ void testCreateIndex() {
 }
 
 void testInsertMultiRow() {
-    auto node = parse("INSERT INTO t VALUES (1, 'a', TRUE), (2, 'b', FALSE);");
+    auto node = parse("PUT INTO t VALUES (1, 'a', TRUE), (2, 'b', FALSE);");
     auto* ins = dynamic_cast<InsertStatement*>(node.get());
     assert(ins != nullptr);
     assert(ins->table == "t");
@@ -50,7 +50,7 @@ void testInsertMultiRow() {
 }
 
 void testInsertWithColumns() {
-    auto node = parse("INSERT INTO t (id, name) VALUES (7, 'x');");
+    auto node = parse("PUT INTO t (id, name) VALUES (7, 'x');");
     auto* ins = dynamic_cast<InsertStatement*>(node.get());
     assert(ins != nullptr);
     assert(ins->columns.size() == 2);
@@ -58,7 +58,7 @@ void testInsertWithColumns() {
 }
 
 void testSelectStar() {
-    auto node = parse("SELECT * FROM t;");
+    auto node = parse("FETCH * FROM t;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr);
     assert(s->selectStar);
@@ -67,7 +67,7 @@ void testSelectStar() {
 }
 
 void testSelectQualifiedColumns() {
-    auto node = parse("SELECT t.a, b FROM t;");
+    auto node = parse("FETCH t.a, b FROM t;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr);
     assert(!s->selectStar);
@@ -78,7 +78,7 @@ void testSelectQualifiedColumns() {
 
 // a = 1 OR b = 2 AND c = 3  ==>  a=1 OR (b=2 AND c=3)
 void testWherePrecedence() {
-    auto node = parse("SELECT * FROM t WHERE a = 1 OR b = 2 AND c = 3;");
+    auto node = parse("FETCH * FROM t WHEN a = 1 OR b = 2 AND c = 3;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr && s->where != nullptr);
     auto* root = dynamic_cast<LogicalExpr*>(s->where.get());
@@ -89,7 +89,7 @@ void testWherePrecedence() {
 }
 
 void testWhereNotAndParens() {
-    auto node = parse("SELECT * FROM t WHERE NOT (a = 1);");
+    auto node = parse("FETCH * FROM t WHEN NOT (a = 1);");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr && s->where != nullptr);
     auto* un = dynamic_cast<UnaryExpr*>(s->where.get());
@@ -98,7 +98,7 @@ void testWhereNotAndParens() {
 }
 
 void testDelete() {
-    auto node = parse("DELETE FROM t WHERE id >= 5;");
+    auto node = parse("REMOVE FROM t WHEN id >= 5;");
     auto* d = dynamic_cast<DeleteStatement*>(node.get());
     assert(d != nullptr);
     assert(d->table == "t");
@@ -107,7 +107,7 @@ void testDelete() {
 }
 
 void testTrailingSemicolonOptional() {
-    auto node = parse("SELECT * FROM t");  // no ';'
+    auto node = parse("FETCH * FROM t");  // no ';'
     assert(dynamic_cast<SelectStatement*>(node.get()) != nullptr);
 }
 
@@ -125,12 +125,12 @@ void expectParseError(const std::string& sql) {
 }
 
 void testSyntaxErrors() {
-    expectParseError("SELECT FROM t;");          // missing projection
-    expectParseError("SELECT * t;");             // missing FROM
-    expectParseError("CREATE TABLE t (id);");    // missing column type
-    expectParseError("INSERT INTO t VALUES 1;"); // missing '('
-    expectParseError("SELECT * FROM t WHERE;");  // missing predicate
-    expectParseError("SELECT * FROM t extra;");  // trailing tokens
+    expectParseError("FETCH FROM t;");          // missing projection
+    expectParseError("FETCH * t;");             // missing FROM
+    expectParseError("BUILD RELATION t (id);");    // missing column type
+    expectParseError("PUT INTO t VALUES 1;"); // missing '('
+    expectParseError("FETCH * FROM t WHEN;");  // missing predicate
+    expectParseError("FETCH * FROM t extra;");  // trailing tokens
     expectParseError("");                        // empty input
 }
 

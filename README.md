@@ -1,24 +1,30 @@
 # PRQLite
 
 A relational database built from scratch in modern C++ (C++20). PRQLite implements the
-full stack of a small single-node RDBMS: a SQL front-end, a Volcano-model execution
-engine, a paged storage engine with a buffer pool, B+ tree indexing, and ACID
-transactions with write-ahead logging and crash recovery.
+full stack of a small single-node RDBMS: a front-end for its **own query language**
+(PRQLite QL, not SQL), a Volcano-model execution engine, a paged storage engine with a
+buffer pool, B+ tree indexing, and ACID transactions with write-ahead logging and crash
+recovery.
 
 It runs as an interactive REPL and persists data across restarts.
 
 ## Features
 
-**SQL surface**
-- DDL: `CREATE TABLE` / `CREATE INDEX`, `DROP TABLE` / `DROP INDEX`, `ALTER TABLE ADD/DROP COLUMN`
-- DML: `INSERT`, `UPDATE`, `DELETE`
-- Queries: projection, `WHERE` (`=, !=, <, <=, >, >=`, `AND/OR/NOT`, `IS [NOT] NULL`,
-  `[NOT] IN`, `BETWEEN`, `LIKE`), `INNER JOIN ... ON`, `GROUP BY`/`HAVING`, aggregates
-  (`COUNT/SUM/AVG/MIN/MAX`), `DISTINCT` / `COUNT(DISTINCT)`, `ORDER BY`, `LIMIT`, and
-  uncorrelated scalar/`IN`/`EXISTS` subqueries
+**Query language (PRQLite QL, not SQL)**
+- Definitions: `BUILD RELATION` / `BUILD INDEX`, `DISCARD RELATION` / `DISCARD INDEX`,
+  `RESHAPE RELATION ADD/DISCARD COLUMN`
+- Data changes: `PUT INTO`, `MODIFY`, `REMOVE`
+- Queries: `FETCH` with projection, `WHEN` (`=, !=, <, <=, >, >=`, `AND/OR/NOT`,
+  `IS [NOT] NULL`, `[NOT] IN`, `BETWEEN`, `LIKE`), `LINK ... ON` (inner join),
+  `GROUP BY`/`HAVING`, aggregates (`COUNT/SUM/AVG/MIN/MAX`), `UNIQUEONLY` /
+  `COUNT(UNIQUEONLY ...)`, `SORT BY`, `TAKE`, and uncorrelated scalar/`IN`/`EXISTS`
+  subqueries
 - Constraints: `PRIMARY KEY`, `UNIQUE`, `NOT NULL`, `DEFAULT`, `CHECK`, foreign keys
   (`REFERENCES`), and `VARCHAR(n)` length enforcement
-- Transactions: `BEGIN` / `COMMIT` / `ROLLBACK`
+- Transactions: `START` / `SAVE` / `UNDO`
+
+The full keyword vocabulary and SQL-to-PRQLite mapping are in
+[docs/grammar.txt](docs/grammar.txt).
 
 **Engine internals**
 - Hand-written lexer + recursive-descent parser (precedence climbing) → AST (visitor pattern)
@@ -44,10 +50,10 @@ cmake --build build
 ./build/prqlite        # (build/prqlite.exe on Windows)
 ```
 
-```sql
-prqlite=# CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(16) NOT NULL);
-prqlite=# INSERT INTO users VALUES (1, 'ann');
-prqlite=# SELECT * FROM users;
+```
+prqlite=# BUILD RELATION users (id INT PRIMARY KEY, name VARCHAR(16) NOT NULL);
+prqlite=# PUT INTO users VALUES (1, 'ann');
+prqlite=# FETCH * FROM users;
 ```
 
 Type `\h` for help and `\q` to quit.
@@ -75,8 +81,9 @@ docs/         grammar.txt (SQL grammar reference)
 
 ## Grammar
 
-The accepted SQL subset is documented in [docs/grammar.txt](docs/grammar.txt). The
-authoritative grammar is the recursive-descent parser in `src/frontend/parser.cpp`.
+The accepted query language (and its SQL-to-PRQLite keyword mapping) is documented in
+[docs/grammar.txt](docs/grammar.txt). The authoritative grammar is the recursive-descent
+parser in `src/frontend/parser.cpp`.
 
 ## Roadmap
 

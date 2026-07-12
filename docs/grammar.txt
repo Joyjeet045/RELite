@@ -1,12 +1,47 @@
-PRQLite SQL Grammar
-===================
+PRQLite Query Language Grammar
+==============================
 
-This file documents the SQL subset accepted by PRQLite. It is DOCUMENTATION
-ONLY -- the parser is a hand-written recursive-descent parser and does not read
-this file. The authoritative grammar is the set of parse* functions in
-src/frontend/parser.cpp; each production below corresponds to one function.
-Terminals (tokens) are produced by src/frontend/lexer.cpp and enumerated in
-include/frontend/token.hpp.
+PRQLite uses its OWN query language, not SQL. This file documents the accepted
+language. It is DOCUMENTATION ONLY -- the parser is a hand-written
+recursive-descent parser and does not read this file. The authoritative grammar
+is the set of parse* functions in src/frontend/parser.cpp; each production below
+corresponds to one function. Terminals (tokens) are produced by
+src/frontend/lexer.cpp and enumerated in include/frontend/token.hpp.
+
+
+================================================================================
+Keyword mapping (SQL -> PRQLite)
+================================================================================
+
+PRQLite's keywords replace SQL's. The engine internals still use SQL-flavored
+TokenType names for familiarity, but only the PRQLite words on the right are
+accepted as source.
+
+  SQL                     PRQLite
+  ---------------------   ---------------------
+  CREATE TABLE            BUILD RELATION
+  CREATE INDEX            BUILD INDEX
+  DROP TABLE              DISCARD RELATION
+  DROP INDEX              DISCARD INDEX
+  ALTER TABLE             RESHAPE RELATION
+  INSERT INTO             PUT INTO
+  SELECT                  FETCH
+  UPDATE                  MODIFY
+  DELETE                  REMOVE
+  WHERE                   WHEN
+  ORDER BY                SORT BY
+  LIMIT                   TAKE
+  DISTINCT                UNIQUEONLY
+  INNER JOIN / JOIN       LINK
+  BEGIN                   START
+  COMMIT                  SAVE
+  ROLLBACK                UNDO
+
+  Unchanged from SQL: FROM, INTO, VALUES, SET, ON, INDEX, GROUP BY, HAVING, AS,
+  ASC, DESC, ADD, COLUMN, PRIMARY KEY, UNIQUE, NOT NULL, DEFAULT, CHECK,
+  REFERENCES, IN, IS, BETWEEN, LIKE, EXISTS, AND, OR, NOT, TRUE, FALSE, NULL,
+  and the type names INT/INTEGER, BOOL/BOOLEAN, TEXT, VARCHAR.
+
 
 Notation (EBNF)
 ---------------
@@ -36,61 +71,60 @@ Terminals (lexical)
   punctuation := "(" | ")" | "," | ";" | "*" | "."
 
   Comments / whitespace are skipped by the lexer.
-  Keywords: SELECT FROM WHERE INSERT INTO VALUES CREATE TABLE INDEX ON DELETE
-            UPDATE SET DROP ALTER ADD COLUMN REFERENCES FOREIGN KEY PRIMARY
-            UNIQUE DEFAULT CHECK DISTINCT ORDER BY GROUP HAVING LIMIT AS ASC
-            DESC JOIN INNER IS IN BETWEEN LIKE EXISTS BEGIN COMMIT ROLLBACK
-            TRANSACTION AND OR NOT INT INTEGER BOOL BOOLEAN TEXT VARCHAR TRUE
-            FALSE NULL
+  Keywords: FETCH FROM WHEN PUT INTO VALUES BUILD RELATION INDEX ON REMOVE
+            MODIFY SET DISCARD RESHAPE ADD COLUMN REFERENCES FOREIGN KEY PRIMARY
+            UNIQUE DEFAULT CHECK UNIQUEONLY SORT BY GROUP HAVING TAKE AS ASC
+            DESC LINK IS IN BETWEEN LIKE EXISTS START SAVE UNDO AND OR NOT INT
+            INTEGER BOOL BOOLEAN TEXT VARCHAR TRUE FALSE NULL
 
 
 ================================================================================
 Statements
 ================================================================================
 
-  statement   := ( createStmt
-                 | insertStmt
-                 | selectStmt
-                 | deleteStmt
-                 | updateStmt
-                 | dropStmt
-                 | alterStmt
+  statement   := ( buildStmt
+                 | putStmt
+                 | fetchStmt
+                 | removeStmt
+                 | modifyStmt
+                 | discardStmt
+                 | reshapeStmt
                  | txnStmt ) [ ";" ] ;
 
-  createStmt  := "CREATE" "TABLE" ident "(" columnDef { "," columnDef } ")"
-               | "CREATE" "INDEX" ident "ON" ident "(" ident ")" ;
+  buildStmt   := "BUILD" "RELATION" ident "(" columnDef { "," columnDef } ")"
+               | "BUILD" "INDEX" ident "ON" ident "(" ident ")" ;
 
-  insertStmt  := "INSERT" "INTO" ident [ "(" ident { "," ident } ")" ]
+  putStmt     := "PUT" "INTO" ident [ "(" ident { "," ident } ")" ]
                  "VALUES" valueRow { "," valueRow } ;
   valueRow    := "(" literal { "," literal } ")" ;   ; values are literals only
 
-  selectStmt  := "SELECT" [ "DISTINCT" ] ( "*" | selectItem { "," selectItem } )
+  fetchStmt   := "FETCH" [ "UNIQUEONLY" ] ( "*" | fetchItem { "," fetchItem } )
                  "FROM" ident
-                 [ joinClause ]
-                 [ "WHERE"  expression ]
+                 [ linkClause ]
+                 [ "WHEN"   expression ]
                  [ "GROUP" "BY" columnRef { "," columnRef } ]
                  [ "HAVING" expression ]
-                 [ "ORDER" "BY" orderKey { "," orderKey } ]
-                 [ "LIMIT" integer ] ;
-  selectItem  := aggregate | columnRef ;
-  aggregate   := ident "(" [ "DISTINCT" ] ( "*" | columnRef ) ")" ;  ; COUNT/SUM/
-                                                                     ; AVG/MIN/MAX
-  joinClause  := [ "INNER" ] "JOIN" ident "ON" expression ;  ; single inner join
-  orderKey    := columnRef [ "ASC" | "DESC" ] ;
+                 [ "SORT" "BY" sortKey { "," sortKey } ]
+                 [ "TAKE" integer ] ;
+  fetchItem   := aggregate | columnRef ;
+  aggregate   := ident "(" [ "UNIQUEONLY" ] ( "*" | columnRef ) ")" ; ; COUNT/SUM/
+                                                                      ; AVG/MIN/MAX
+  linkClause  := "LINK" ident "ON" expression ;   ; single inner join
+  sortKey     := columnRef [ "ASC" | "DESC" ] ;
 
-  deleteStmt  := "DELETE" "FROM" ident [ "WHERE" expression ] ;
+  removeStmt  := "REMOVE" "FROM" ident [ "WHEN" expression ] ;
 
-  updateStmt  := "UPDATE" ident "SET" assignment { "," assignment }
-                 [ "WHERE" expression ] ;
+  modifyStmt  := "MODIFY" ident "SET" assignment { "," assignment }
+                 [ "WHEN" expression ] ;
   assignment  := ident "=" expression ;
 
-  dropStmt    := "DROP" ( "TABLE" ident | "INDEX" ident ) ;
+  discardStmt := "DISCARD" ( "RELATION" ident | "INDEX" ident ) ;
 
-  alterStmt   := "ALTER" "TABLE" ident
+  reshapeStmt := "RESHAPE" "RELATION" ident
                  ( "ADD" [ "COLUMN" ] columnDef
-                 | "DROP" [ "COLUMN" ] ident ) ;
+                 | "DISCARD" [ "COLUMN" ] ident ) ;
 
-  txnStmt     := "BEGIN" [ "TRANSACTION" ] | "COMMIT" | "ROLLBACK" ;
+  txnStmt     := "START" | "SAVE" | "UNDO" ;
 
 
 ================================================================================
@@ -130,7 +164,7 @@ Expressions (precedence climbing; loosest binding first)
                | literal
                | columnRef ;
 
-  subquery    := selectStmt ;                 ; uncorrelated only
+  subquery    := fetchStmt ;                  ; uncorrelated only
   columnRef   := ident [ "." ident ] ;        ; optional table qualifier
   literal     := integer | string | "TRUE" | "FALSE" | "NULL" ;
 
@@ -144,10 +178,11 @@ Notes / intentional limitations
     supported.
   * No unary minus: negative numeric literals (e.g. -1) are not accepted by the
     lexer/parser.
-  * INSERT ... VALUES accepts literals only, not general expressions.
-  * JOIN is a single, inner-only join and always requires an ON predicate.
-  * Subqueries are uncorrelated and appear only as IN (SELECT ...),
-    EXISTS (SELECT ...), or a parenthesized scalar (SELECT ...).
+  * INSERT ... VALUES (PUT ... VALUES) accepts literals only, not general
+    expressions.
+  * LINK is a single, inner-only join and always requires an ON predicate.
+  * Subqueries are uncorrelated and appear only as IN (FETCH ...),
+    EXISTS (FETCH ...), or a parenthesized scalar (FETCH ...).
   * A few constructs need two-token lookahead (peekAt(1)):
       - `ident "("` distinguishes an aggregate call from a column reference.
       - `NOT` before IN / BETWEEN / LIKE (vs. a boolean NOT).

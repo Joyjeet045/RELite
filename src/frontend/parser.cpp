@@ -30,7 +30,7 @@ ComparisonOp toComparisonOp(TokenType type) {
         case TokenType::LEQ: return ComparisonOp::Leq;
         case TokenType::GT: return ComparisonOp::Gt;
         case TokenType::GEQ: return ComparisonOp::Geq;
-        default: return ComparisonOp::Eq;  // unreachable: guarded by isComparisonToken
+        default: return ComparisonOp::Eq;
     }
 }
 
@@ -48,23 +48,19 @@ bool isLiteralToken(TokenType type) {
     }
 }
 
-}  // namespace
+}
 
 ParseError::ParseError(std::string message, int line, int column)
     : std::runtime_error(std::move(message)), line_(line), column_(column) {}
 
 Parser::Parser(std::vector<Token> tokens) : tokens_(std::move(tokens)) {}
 
-// ---------------------------------------------------------------------------
-// Token cursor helpers
-// ---------------------------------------------------------------------------
-
 const Token& Parser::peek() const { return tokens_[pos_]; }
 
 const Token& Parser::peekAt(std::size_t offset) const {
     std::size_t idx = pos_ + offset;
     if (idx >= tokens_.size()) {
-        return tokens_.back();  // END_OF_FILE
+        return tokens_.back();
     }
     return tokens_[idx];
 }
@@ -148,10 +144,6 @@ std::unique_ptr<LiteralExpr> Parser::makeLiteral(const Token& tok) {
     return lit;
 }
 
-// ---------------------------------------------------------------------------
-// Statement dispatch
-// ---------------------------------------------------------------------------
-
 ASTNodePtr Parser::parseStatement() {
     const Token& t = peek();
     ASTNodePtr stmt;
@@ -170,7 +162,7 @@ ASTNodePtr Parser::parseStatement() {
             error(t, "expected a statement (BUILD, PUT, FETCH, REMOVE, MODIFY, DISCARD, START, SAVE, or UNDO)");
     }
 
-    match(TokenType::SEMICOLON);  // trailing ';' is optional
+    match(TokenType::SEMICOLON);
     if (!isAtEnd()) {
         error(peek(), "unexpected token after statement");
     }
@@ -185,10 +177,6 @@ ExpressionPtr Parser::parseWholeExpression() {
     }
     return e;
 }
-
-// ---------------------------------------------------------------------------
-// CREATE TABLE / CREATE INDEX
-// ---------------------------------------------------------------------------
 
 ASTNodePtr Parser::parseCreate() {
     consume(TokenType::CREATE, "CREATE");
@@ -240,7 +228,6 @@ ColumnDefinition Parser::parseColumnDefinition() {
             error(typeTok, "expected a column type (INT, BOOL, TEXT, VARCHAR)");
     }
 
-    // Optional column constraints, in any order.
     for (;;) {
         if (match(TokenType::PRIMARY)) {
             consume(TokenType::KEY, "KEY");
@@ -282,7 +269,6 @@ ColumnDefinition Parser::parseColumnDefinition() {
             }
             advance();
         } else if (match(TokenType::REFERENCES)) {
-            // Inline foreign key: REFERENCES parent(column).
             def.refTable = consume(TokenType::IDENTIFIER, "referenced table").lexeme;
             consume(TokenType::LPAREN, "'('");
             def.refColumn = consume(TokenType::IDENTIFIER, "referenced column").lexeme;
@@ -298,10 +284,6 @@ ColumnDefinition Parser::parseColumnDefinition() {
     }
     return def;
 }
-
-// ---------------------------------------------------------------------------
-// INSERT
-// ---------------------------------------------------------------------------
 
 ASTNodePtr Parser::parseInsert() {
     consume(TokenType::INSERT, "INSERT");
@@ -331,10 +313,6 @@ ASTNodePtr Parser::parseInsert() {
     return stmt;
 }
 
-// ---------------------------------------------------------------------------
-// SELECT
-// ---------------------------------------------------------------------------
-
 ASTNodePtr Parser::parseSelect() {
     consume(TokenType::SELECT, "SELECT");
     auto stmt = std::make_unique<SelectStatement>();
@@ -347,7 +325,6 @@ ASTNodePtr Parser::parseSelect() {
         stmt->selectStar = true;
     } else {
         do {
-            // Aggregate call: NAME '(' (* | column) ')'
             if (check(TokenType::IDENTIFIER) && peekAt(1).type == TokenType::LPAREN) {
                 auto fn = std::make_unique<FunctionExpr>();
                 std::string name = advance().lexeme;
@@ -367,9 +344,6 @@ ASTNodePtr Parser::parseSelect() {
                 consume(TokenType::RPAREN, "')'");
                 stmt->aggregates.push_back(std::move(fn));
             } else {
-                // A select-list item is a general expression. A bare column is
-                // kept as a ColumnRef; anything else (arithmetic, negation) is
-                // wrapped in a ColumnRef whose `computed` holds the expression.
                 ExpressionPtr e = parseAdditive();
                 Expression* raw = e.release();
                 if (auto* cr = dynamic_cast<ColumnRef*>(raw)) {
@@ -437,10 +411,6 @@ ASTNodePtr Parser::parseSelect() {
     return stmt;
 }
 
-// ---------------------------------------------------------------------------
-// DELETE
-// ---------------------------------------------------------------------------
-
 ASTNodePtr Parser::parseDelete() {
     consume(TokenType::DELETE, "DELETE");
     consume(TokenType::FROM, "FROM");
@@ -493,7 +463,7 @@ ASTNodePtr Parser::parseAlter() {
     auto stmt = std::make_unique<AlterStatement>();
     stmt->table = consume(TokenType::IDENTIFIER, "table name").lexeme;
     if (match(TokenType::ADD)) {
-        match(TokenType::COLUMN);  // optional COLUMN keyword
+        match(TokenType::COLUMN);
         stmt->kind = AlterStatement::Kind::AddColumn;
         stmt->column = parseColumnDefinition();
     } else if (match(TokenType::DROP)) {
@@ -518,7 +488,7 @@ ASTNodePtr Parser::parseTransaction() {
     switch (t.type) {
         case TokenType::BEGIN:
             stmt->kind = TransactionStatement::Kind::Begin;
-            match(TokenType::TRANSACTION);  // optional noise word
+            match(TokenType::TRANSACTION);
             break;
         case TokenType::COMMIT:
             stmt->kind = TransactionStatement::Kind::Commit;
@@ -531,10 +501,6 @@ ASTNodePtr Parser::parseTransaction() {
     }
     return stmt;
 }
-
-// ---------------------------------------------------------------------------
-// Shared leaf productions
-// ---------------------------------------------------------------------------
 
 std::unique_ptr<ColumnRef> Parser::parseColumnRef() {
     auto ref = std::make_unique<ColumnRef>();
@@ -568,16 +534,6 @@ ExpressionPtr Parser::parseLiteral() {
     }
     return lit;
 }
-
-// ---------------------------------------------------------------------------
-// Expression grammar (precedence climbing)
-//   expression := orExpr
-//   orExpr     := andExpr (OR andExpr)*
-//   andExpr    := notExpr (AND notExpr)*
-//   notExpr    := NOT notExpr | comparison
-//   comparison := primary (compOp primary)?
-//   primary    := literal | columnRef | '(' orExpr ')'
-// ---------------------------------------------------------------------------
 
 ExpressionPtr Parser::parseExpression() { return parseOr(); }
 
@@ -619,7 +575,6 @@ ExpressionPtr Parser::parseNot() {
 ExpressionPtr Parser::parseComparison() {
     ExpressionPtr left = parseAdditive();
 
-    // IS [NOT] NULL
     if (match(TokenType::IS)) {
         bool negated = match(TokenType::NOT);
         consume(TokenType::NULL_LITERAL, "NULL");
@@ -629,7 +584,6 @@ ExpressionPtr Parser::parseComparison() {
         return node;
     }
 
-    // [NOT] IN / BETWEEN / LIKE
     bool negated = false;
     if (check(TokenType::NOT) &&
         (peekAt(1).type == TokenType::IN || peekAt(1).type == TokenType::BETWEEN ||
@@ -781,4 +735,4 @@ ExpressionPtr Parser::parsePrimary() {
     error(t, "expected an expression");
 }
 
-}  // namespace db::parser
+}

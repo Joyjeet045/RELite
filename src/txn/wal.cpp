@@ -38,14 +38,13 @@ std::string encode(const LogRecord& r) {
     putI32(out, r.rid.slotId);
     putStr(out, r.beforeImage);
     putStr(out, r.afterImage);
-    // Frame with a total-length prefix so readAll can resynchronize.
     std::string framed;
     putU32(framed, static_cast<std::uint32_t>(out.size()));
     framed.append(out);
     return framed;
 }
 
-}  // namespace
+}
 
 WriteAheadLog::WriteAheadLog(const std::string& path, bool truncate) : path_(path) {
     auto mode = std::ios::in | std::ios::out | std::ios::binary;
@@ -58,7 +57,6 @@ WriteAheadLog::WriteAheadLog(const std::string& path, bool truncate) : path_(pat
         create.close();
         file_.open(path_, mode);
     }
-    // Continue LSNs after any existing records.
     auto existing = readAll();
     for (const auto& rec : existing) {
         if (rec.lsn >= nextLsn_) nextLsn_ = rec.lsn + 1;
@@ -80,9 +78,6 @@ lsn_t WriteAheadLog::append(LogRecord record) {
     file_.seekp(0, std::ios::end);
     file_.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     file_.flush();
-    // Group commit: the record is in the OS buffer now; durability (fsync) is
-    // deferred to flush() (called at COMMIT) or to the buffer pool's pre-evict
-    // hook, which flushes the log before any dirty page is stolen to disk.
     ++appendsSinceReset_;
     return record.lsn;
 }
@@ -143,7 +138,6 @@ void WriteAheadLog::flush() {
 void WriteAheadLog::reset() {
     std::lock_guard<std::mutex> lock(mtx_);
     file_.close();
-    // Truncate the file to empty, then reopen for read+write.
     { std::fstream clear(path_, std::ios::out | std::ios::binary | std::ios::trunc); }
     file_.open(path_, std::ios::in | std::ios::out | std::ios::binary);
     backend::syncFileToDisk(path_);
@@ -165,4 +159,4 @@ std::vector<int> WriteAheadLog::committedTxns(const std::vector<LogRecord>& reco
     return std::vector<int>(committed.begin(), committed.end());
 }
 
-}  // namespace db::txn
+}

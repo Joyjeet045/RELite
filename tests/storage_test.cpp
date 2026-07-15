@@ -51,7 +51,6 @@ void testPageInsertGetErase() {
     assert(page.erase(s0));
     assert(!page.get(s0, out));
     assert(page.isLive(s1));
-    // Update in place (smaller) works; larger fails.
     assert(page.update(s1, "worl"));
     assert(page.get(s1, out) && out == "worl");
     assert(!page.update(s1, "way too long to fit in four bytes"));
@@ -63,7 +62,6 @@ void testPageFull() {
     int slot;
     assert(page.insert(big, slot));
     assert(page.insert(big, slot));
-    // Third 2000-byte record cannot fit in a 4096-byte page.
     assert(!page.insert(big, slot));
 }
 
@@ -79,7 +77,7 @@ void testDiskRoundTrip() {
         disk.writePage(id, buf.data());
     }
     {
-        backend::DiskManager disk(path);  // reopen
+        backend::DiskManager disk(path);
         assert(disk.numPages() == 1);
         std::vector<char> buf(backend::PAGE_SIZE, 0);
         disk.readPage(0, buf.data());
@@ -93,7 +91,6 @@ void testBufferPoolEviction() {
     backend::DiskManager disk(path, /*truncate=*/true);
     backend::BufferPool pool(&disk, /*numFrames=*/2);
 
-    // Create three pages through a 2-frame pool; forces an eviction + writeback.
     std::vector<backend::PageId> ids;
     for (int i = 0; i < 3; ++i) {
         backend::PageId id;
@@ -106,7 +103,6 @@ void testBufferPoolEviction() {
     }
     pool.flushAll();
 
-    // Read them all back; contents must survive eviction.
     for (int i = 0; i < 3; ++i) {
         backend::Page* p = pool.fetchPage(ids[i]);
         assert(p != nullptr);
@@ -129,7 +125,7 @@ void testPageGuard() {
         int slot;
         guard.page()->insert("guarded", slot);
         guard.markDirty();
-    }  // guard unpins here
+    }
     backend::Page* p = pool.fetchPage(id);
     std::string out;
     assert(p->get(0, out) && out == "guarded");
@@ -137,7 +133,7 @@ void testPageGuard() {
     std::remove(path.c_str());
 }
 
-}  // namespace
+}
 
 int main() {
     testTupleRoundTrip();

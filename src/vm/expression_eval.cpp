@@ -23,7 +23,6 @@ Value cachedToValue(const parser::CachedValue& cv) {
     return Value::null();
 }
 
-// SQL LIKE: '%' matches any run (incl. empty), '_' matches one character.
 bool likeMatch(const std::string& s, const std::string& p) {
     std::size_t si = 0, pi = 0;
     std::size_t star = std::string::npos, mark = 0;
@@ -45,7 +44,7 @@ bool likeMatch(const std::string& s, const std::string& p) {
     return pi == p.size();
 }
 
-}  // namespace
+}
 
 Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
     using namespace parser;
@@ -73,7 +72,7 @@ Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
         Value r = evalExpression(*bin->right, tuple);
         auto cmp = compareValues(l, r);
         if (!cmp.has_value()) {
-            return Value::null();  // comparison involving NULL
+            return Value::null();
         }
         bool res = false;
         switch (bin->op) {
@@ -92,7 +91,7 @@ Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
         Value r = evalExpression(*ar->right, tuple);
         bool lNum = (l.type == ValueType::Int || l.type == ValueType::Double);
         bool rNum = (r.type == ValueType::Int || r.type == ValueType::Double);
-        if (!lNum || !rNum) return Value::null();  // NULL or non-numeric operand
+        if (!lNum || !rNum) return Value::null();
         if (l.type == ValueType::Double || r.type == ValueType::Double) {
             double a = (l.type == ValueType::Double) ? l.doubleValue
                                                      : static_cast<double>(l.intValue);
@@ -103,7 +102,7 @@ Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
                 case ArithmeticOp::Sub: return Value::makeDouble(a - b);
                 case ArithmeticOp::Mul: return Value::makeDouble(a * b);
                 case ArithmeticOp::Div:
-                    if (b == 0.0) return Value::null();  // division by zero -> NULL
+                    if (b == 0.0) return Value::null();
                     return Value::makeDouble(a / b);
             }
             return Value::null();
@@ -115,7 +114,7 @@ Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
             case ArithmeticOp::Sub: return Value::makeInt(a - b);
             case ArithmeticOp::Mul: return Value::makeInt(a * b);
             case ArithmeticOp::Div:
-                if (b == 0) return Value::null();  // integer division by zero -> NULL
+                if (b == 0) return Value::null();
                 return Value::makeInt(a / b);
         }
         return Value::null();
@@ -131,7 +130,6 @@ Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
             if (lHas && rHas) return Value::makeBool(true);
             return Value::null();
         }
-        // OR
         if ((lHas && lb) || (rHas && rb)) return Value::makeBool(true);
         if (lHas && rHas) return Value::makeBool(false);
         return Value::null();
@@ -221,4 +219,4 @@ bool predicateTrue(const parser::Expression& expr, const Tuple& tuple) {
     return v.type == ValueType::Bool && v.boolValue;
 }
 
-}  // namespace db::vm
+}

@@ -5,8 +5,6 @@
 
 namespace db::backend {
 
-// RAII pin: keeps a page pinned in the buffer pool for its lifetime and unpins
-// on destruction, propagating the dirty flag. Move-only.
 class PageGuard {
 public:
     PageGuard() = default;
@@ -32,7 +30,6 @@ public:
     bool valid() const { return page_ != nullptr; }
     void markDirty() { dirty_ = true; }
 
-    // Unpins early; the guard becomes empty.
     void drop() {
         if (pool_ != nullptr && page_ != nullptr) {
             pool_->unpin(pageId_, dirty_);
@@ -59,4 +56,4 @@ private:
     bool dirty_ = false;
 };
 
-}  // namespace db::backend
+}

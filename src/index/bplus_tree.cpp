@@ -140,7 +140,7 @@ std::vector<vm::RecordID> BPlusTree::range(const Key& lo, const Key& hi) const {
     while (leaf != nullptr) {
         for (std::size_t i = 0; i < leaf->keys.size(); ++i) {
             if (less(leaf->keys[i], lo)) continue;
-            if (less(hi, leaf->keys[i])) return out;  // past the upper bound
+            if (less(hi, leaf->keys[i])) return out;
             out.insert(out.end(), leaf->values[i].begin(), leaf->values[i].end());
         }
         leaf = leaf->next;
@@ -166,8 +166,6 @@ std::vector<vm::RecordID> BPlusTree::rangeScan(const Key* lo, const Key* hi) con
 bool BPlusTree::erase(const Key& key, const vm::RecordID& rid) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
 
-    // Descend to the target leaf, recording the (parent, childIndex) path so an
-    // emptied node can be unlinked from its parent afterwards.
     std::vector<std::pair<Node*, std::size_t>> path;
     Node* node = root_;
     while (!node->leaf) {
@@ -197,15 +195,12 @@ bool BPlusTree::erase(const Key& key, const vm::RecordID& rid) {
     }
     list.erase(it);
     if (!list.empty()) {
-        return true;  // other rids still carry this key
+        return true;
     }
     leaf->keys.erase(leaf->keys.begin() + pos);
     leaf->values.erase(leaf->values.begin() + pos);
     --distinctKeys_;
 
-    // Unlink now-empty nodes, cascading toward the root. A node is removed only
-    // when it is completely empty (leaf: no keys; internal: no children); this
-    // is always a structurally valid B+ tree edit.
     Node* child = node;
     while (child != root_ && !path.empty()) {
         bool empty = child->leaf ? child->keys.empty() : child->children.empty();
@@ -227,7 +222,6 @@ bool BPlusTree::erase(const Key& key, const vm::RecordID& rid) {
         child = parent;
     }
 
-    // Collapse redundant / emptied roots.
     while (!root_->leaf && root_->children.size() == 1) {
         Node* only = root_->children[0];
         delete root_;
@@ -240,4 +234,4 @@ bool BPlusTree::erase(const Key& key, const vm::RecordID& rid) {
     return true;
 }
 
-}  // namespace db::index
+}

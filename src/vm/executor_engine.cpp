@@ -24,7 +24,6 @@ std::string aggLabel(const parser::FunctionExpr& fn) {
     return fn.name + "(" + arg + ")";
 }
 
-// Flips a comparison so `literal <op> column` reads as `column <op'> literal`.
 parser::ComparisonOp flipOp(parser::ComparisonOp op) {
     using O = parser::ComparisonOp;
     switch (op) {
@@ -32,20 +31,18 @@ parser::ComparisonOp flipOp(parser::ComparisonOp op) {
         case O::Leq: return O::Geq;
         case O::Gt: return O::Lt;
         case O::Geq: return O::Leq;
-        default: return op;  // Eq / Neq are symmetric
+        default: return op;
     }
 }
 
 Value computeAggregate(const parser::FunctionExpr& fn,
                        const std::vector<const std::vector<Value>*>& rows) {
-    // COUNT(*) counts rows regardless of value.
     if (fn.name == "COUNT" && fn.star && !fn.distinct) {
         return Value::makeInt(static_cast<std::int64_t>(rows.size()));
     }
 
     const int col = fn.argument ? fn.argument->columnIndex : -1;
 
-    // Collect the argument column's non-null values, de-duplicating on DISTINCT.
     std::vector<const Value*> vals;
     std::unordered_set<std::string> seen;
     for (const auto* r : rows) {
@@ -77,7 +74,7 @@ Value computeAggregate(const parser::FunctionExpr& fn,
             }
             ++n;
         }
-        if (n == 0) return Value::null();  // aggregate over no rows
+        if (n == 0) return Value::null();
         double total = dsum + static_cast<double>(isum);
         if (fn.name == "AVG") {
             return Value::makeDouble(total / static_cast<double>(n));
@@ -86,7 +83,6 @@ Value computeAggregate(const parser::FunctionExpr& fn,
         return Value::makeInt(isum);
     }
 
-    // MIN / MAX
     Value best = Value::null();
     for (const Value* v : vals) {
         if (best.isNull()) {
@@ -102,7 +98,7 @@ Value computeAggregate(const parser::FunctionExpr& fn,
     return best;
 }
 
-}  // namespace
+}
 
 ExecutorEngine::ExecutorEngine(StorageEngine& storage, semantic::Catalog& catalog,
                                txn::TransactionManager* txnManager, int* currentTxn)
@@ -131,9 +127,6 @@ std::vector<std::pair<RecordID, std::vector<Value>>> ExecutorEngine::gatherRows(
     int tableId, const Schema& schema, parser::Expression* where) {
     std::vector<std::pair<RecordID, std::vector<Value>>> rows;
 
-    // Optimizer: use an index scan when WHERE has an indexable equality / range
-    // / BETWEEN predicate (possibly a conjunct of an AND). The candidate rids
-    // are a superset, so every fetched row is re-checked against the full WHERE.
     std::vector<RecordID> candidates;
     if (where != nullptr && indexCandidates(where, tableId, candidates)) {
         for (const RecordID& rid : candidates) {
@@ -168,13 +161,12 @@ bool ExecutorEngine::indexCandidates(parser::Expression* where, int tableId,
     using namespace parser;
     if (where == nullptr) return false;
 
-    // Descend into AND: any indexable conjunct narrows the candidate set.
     if (auto* land = dynamic_cast<LogicalExpr*>(where)) {
         if (land->op == LogicalOp::And) {
             if (indexCandidates(land->left.get(), tableId, rids)) return true;
             if (indexCandidates(land->right.get(), tableId, rids)) return true;
         }
-        return false;  // OR cannot be narrowed with a single side
+        return false;
     }
 
     const Tuple empty;
@@ -206,7 +198,7 @@ bool ExecutorEngine::indexCandidates(parser::Expression* where, int tableId,
                 rids = idx->tree.rangeScan(&key, nullptr);
                 return true;
             default:
-                return false;  // Neq is not selective enough to index
+                return false;
         }
     }
 
@@ -262,7 +254,6 @@ Schema schemaOf(const semantic::TableSchema& ts) {
     return s;
 }
 
-// Converts a persisted literal default into a runtime Value.
 Value fromCached(const parser::CachedValue& cv) {
     switch (cv.kind) {
         case parser::CachedValue::Kind::Int: return Value::makeInt(cv.intValue);
@@ -274,7 +265,6 @@ Value fromCached(const parser::CachedValue& cv) {
     return Value::null();
 }
 
-// Removes duplicate rows, preserving first-occurrence order (for SELECT DISTINCT).
 void dedupeRows(std::vector<std::vector<Value>>& rows) {
     std::unordered_set<std::string> seen;
     std::vector<std::vector<Value>> out;
@@ -291,7 +281,7 @@ void dedupeRows(std::vector<std::vector<Value>>& rows) {
     rows.swap(out);
 }
 
-}  // namespace
+}
 
 void ExecutorEngine::materializeSubquery(parser::SubqueryExpr* sub) {
     if (sub->evaluated) return;
@@ -374,7 +364,7 @@ void ExecutorEngine::checkForeignKeys(const semantic::TableSchema& schema,
     for (const auto& fk : schema.foreignKeys) {
         if (fk.columnIndex >= static_cast<int>(row.size())) continue;
         const Value& v = row[fk.columnIndex];
-        if (v.isNull()) continue;  // NULL foreign key is permitted
+        if (v.isNull()) continue;
         if (!parentHasValue(fk.refTable, fk.refColumn, v)) {
             throw std::runtime_error("foreign key violation: value not present in " +
                                      fk.refTable + "(" + fk.refColumn + ")");
@@ -458,7 +448,7 @@ bool ExecutorEngine::valueExists(int tableId, int columnIndex, const Value& valu
 void ExecutorEngine::enforceConstraints(const semantic::TableSchema& schema, int tableId,
                                         const std::vector<Value>& row,
                                         const RecordID* excludeRid) {
-    Tuple rowTuple(row);  // for CHECK evaluation against the whole row
+    Tuple rowTuple(row);
     for (std::size_t i = 0; i < schema.columns.size(); ++i) {
         const semantic::ColumnSchema& col = schema.columns[i];
         const Value& v = (i < row.size()) ? row[i] : Value::null();
@@ -490,8 +480,6 @@ void ExecutorEngine::enforceConstraints(const semantic::TableSchema& schema, int
 void ExecutorEngine::visit(parser::CreateStatement& node) {
     storage_.tables().registerTable(node.tableId);
 
-    // Auto-create a unique index for each PRIMARY KEY / UNIQUE column so
-    // uniqueness checks (and foreign-key lookups against them) are fast.
     const semantic::TableSchema* ts = catalog_.getTableById(node.tableId);
     if (ts != nullptr) {
         for (std::size_t i = 0; i < ts->columns.size(); ++i) {
@@ -511,7 +499,6 @@ void ExecutorEngine::visit(parser::CreateIdxStatement& node) {
     index::Index* idx =
         storage_.indexes().create(node.indexName, node.tableId, node.columnIndex);
     if (idx != nullptr) {
-        // Backfill the index from rows already in the table.
         Schema schema;
         std::vector<std::string> names;
         loadSchema(node.tableId, schema, names);
@@ -554,7 +541,6 @@ void ExecutorEngine::visit(parser::InsertStatement& node) {
             vals[targets[i]] = evalExpression(*row[i], empty);
             isSet[targets[i]] = true;
         }
-        // Fill unset columns with their DEFAULT (if any).
         if (ts != nullptr) {
             for (std::size_t c = 0; c < ncols; ++c) {
                 if (!isSet[c] && ts->columns[c].hasDefault) {
@@ -604,8 +590,6 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
     std::vector<std::pair<RecordID, std::vector<Value>>> rows;
 
     if (!node.joinTable.empty()) {
-        // JOIN: hash join for an INNER equi-join, nested loop otherwise. LEFT
-        // joins null-pad unmatched left rows; CROSS joins form the full product.
         Schema lschema, rschema;
         std::vector<std::string> lnames, rnames;
         loadSchema(node.tableId, lschema, lnames);
@@ -631,9 +615,6 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
                 }
             }
         } else {
-            // Detect `leftCol = rightCol` so an INNER join can hash. Column
-            // indices in the ON clause are bound against the combined schema
-            // (right columns offset by the left table's width).
             int leftKey = -1;
             int rightKey = -1;
             if (auto* bin = dynamic_cast<parser::BinaryExpr*>(node.joinOn.get())) {
@@ -661,11 +642,10 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
             const bool inner =
                 node.joinType == parser::SelectStatement::JoinKind::Inner;
             if (inner && leftKey >= 0 && rightKey >= 0) {
-                // Build a hash table on the right input, then probe with the left.
                 std::unordered_map<std::string, std::vector<const std::vector<Value>*>> ht;
                 for (auto& rp : rightRows) {
                     const Value& kv = rp.second[rightKey];
-                    if (kv.isNull()) continue;  // NULL never matches in an equi-join
+                    if (kv.isNull()) continue;
                     ht[keyOf(kv)].push_back(&rp.second);
                 }
                 for (auto& lp : leftRows) {
@@ -709,7 +689,6 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         loadSchema(node.tableId, schema, names);
 
         if (!node.aggregates.empty() || !node.groupBy.empty()) {
-            // Group rows by the GROUP BY key (single group when no GROUP BY).
             auto arows = gatherRows(node.tableId, schema, node.where.get());
             std::vector<int> gcols;
             for (const auto& g : node.groupBy) gcols.push_back(g->columnIndex);
@@ -738,7 +717,7 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
                 groups[gi].rows.push_back(&row);
             }
             if (gcols.empty() && groups.empty()) {
-                groups.emplace_back();  // COUNT(*) over an empty table -> one row
+                groups.emplace_back();
             }
 
             for (const auto& col : node.columns) result_.columns.push_back(col->column);
@@ -778,7 +757,6 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         rows = gatherRows(node.tableId, schema, node.where.get());
     }
 
-    // ORDER BY on the (possibly joined) rows.
     if (!node.orderBy.empty()) {
         std::stable_sort(rows.begin(), rows.end(), [&](const auto& a, const auto& b) {
             for (const auto& key : node.orderBy) {
@@ -792,7 +770,6 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         });
     }
 
-    // Build the output rows (projection), then apply DISTINCT and LIMIT.
     if (node.selectStar) {
         result_.columns = names;
         for (auto& pr : rows) {
@@ -847,8 +824,6 @@ void ExecutorEngine::visit(parser::DeleteStatement& node) {
 
     std::vector<index::Index*> tableIndexes = storage_.indexes().forTable(node.tableId);
 
-    // Materialize matching (rid, tuple) pairs first so deletion and index
-    // maintenance cannot disturb the scan.
     std::vector<std::pair<RecordID, Tuple>> victims;
     exec->init();
     Tuple t;
@@ -857,7 +832,6 @@ void ExecutorEngine::visit(parser::DeleteStatement& node) {
         victims.emplace_back(rid, t);
     }
 
-    // Referential integrity: reject the whole DELETE if any row is referenced.
     if (ts != nullptr) {
         for (auto& [vrid, vtuple] : victims) {
             (void)vrid;
@@ -935,8 +909,6 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
         if (txnActive()) {
             StorageEngine* se = &storage_;
             int tid = node.tableId;
-            // Log the change as a delete of the old image + insert of the new so
-            // an uncommitted UPDATE can be undone by crash recovery.
             txnMgr_->logDelete(*currentTxn_, tid, rid, oldBytes);
             txnMgr_->logInsert(*currentTxn_, tid, nr, newBytes);
             std::vector<std::pair<index::Index*, Value>> oldKeys, newKeys;
@@ -970,8 +942,6 @@ void ExecutorEngine::visit(parser::DropStatement& node) {
 }
 
 void ExecutorEngine::visit(parser::AlterStatement& node) {
-    // Read all rows under the current (old) schema, migrate them, and rewrite
-    // the table under the new schema. Indexes on the table are dropped.
     Schema oldSchema;
     std::vector<std::string> oldNames;
     loadSchema(node.tableId, oldSchema, oldNames);
@@ -1057,4 +1027,4 @@ void ExecutorEngine::visit(parser::TransactionStatement& node) {
     }
 }
 
-}  // namespace db::vm
+}

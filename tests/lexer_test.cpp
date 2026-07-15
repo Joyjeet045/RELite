@@ -62,7 +62,7 @@ void testLiterals() {
 
 void testEscapedQuoteInString() {
     auto tokens = lex("'O''Brien'");
-    assert(tokens.size() == 2);  // string literal + EOF
+    assert(tokens.size() == 2);
     assert(tokens[0].type == TokenType::STRING_LITERAL);
     assert(tokens[0].lexeme == "O'Brien");
 }
@@ -78,7 +78,7 @@ void testColumnTypes() {
         TokenType::VARCHAR, TokenType::END_OF_FILE});
 }
 
-}  // namespace
+}
 
 int main() {
     testSelect();

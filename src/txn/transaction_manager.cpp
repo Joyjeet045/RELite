@@ -86,8 +86,6 @@ void TransactionManager::rollback(int txnId) {
     auto it = active_.find(txnId);
     if (it == active_.end()) return;
 
-    // Run undo actions in reverse order. Release the manager lock while running
-    // them (they touch the storage engine, not the manager).
     std::vector<std::function<void()>> undo = std::move(it->second.undo);
     lock.unlock();
     for (auto rit = undo.rbegin(); rit != undo.rend(); ++rit) {
@@ -108,4 +106,4 @@ void TransactionManager::rollback(int txnId) {
     active_.erase(txnId);
 }
 
-}  // namespace db::txn
+}

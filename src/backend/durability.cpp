@@ -38,4 +38,4 @@ bool syncFileToDisk(const std::string& path) {
 #endif
 }
 
-}  // namespace db::backend
+}

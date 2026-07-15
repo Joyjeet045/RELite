@@ -118,7 +118,6 @@ bool Catalog::dropColumn(const std::string& table, const std::string& column) {
         return false;
     }
     schema.columns.erase(schema.columns.begin() + idx);
-    // Drop FKs on the removed column; shift indices of those after it.
     std::vector<ForeignKey> kept;
     for (ForeignKey fk : schema.foreignKeys) {
         if (fk.columnIndex == idx) continue;
@@ -176,4 +175,4 @@ bool Catalog::setColumnCheckExpr(const std::string& table, int columnIndex,
     return true;
 }
 
-}  // namespace db::semantic
+}

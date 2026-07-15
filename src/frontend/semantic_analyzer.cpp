@@ -19,8 +19,6 @@ bool isNumericType(DataType type) {
     return type == DataType::Int || type == DataType::Float;
 }
 
-// Two operands are comparable when they belong to the same family: numeric
-// with numeric, boolean with boolean, or any string type with any string type.
 bool comparable(DataType a, DataType b) {
     if (isStringType(a) && isStringType(b)) {
         return true;
@@ -31,19 +29,17 @@ bool comparable(DataType a, DataType b) {
     return a == b;
 }
 
-// Whether a literal of kind `k` may be stored in a column of type `col`.
 bool literalMatchesColumn(LiteralExpr::Kind k, DataType col) {
     switch (k) {
         case LiteralExpr::Kind::Integer: return col == DataType::Int || col == DataType::Float;
         case LiteralExpr::Kind::Float: return col == DataType::Float;
         case LiteralExpr::Kind::Boolean: return col == DataType::Bool;
         case LiteralExpr::Kind::String: return isStringType(col);
-        case LiteralExpr::Kind::Null: return true;  // NULL fits any column
+        case LiteralExpr::Kind::Null: return true;
     }
     return false;
 }
 
-// Whether a DEFAULT literal (CachedValue) fits a column of type `col`.
 bool defaultMatchesColumn(const parser::CachedValue& v, DataType col) {
     switch (v.kind) {
         case parser::CachedValue::Kind::Int: return col == DataType::Int || col == DataType::Float;
@@ -59,7 +55,7 @@ std::string typeName(DataType type) {
     return std::string(parser::dataTypeName(type));
 }
 
-}  // namespace
+}
 
 SemanticError::SemanticError(const std::string& message)
     : std::runtime_error(message) {}
@@ -80,10 +76,6 @@ void SemanticAnalyzer::bindExpression(parser::Expression& expr,
     currentTable_ = saved;
 }
 
-// ---------------------------------------------------------------------------
-// Expressions
-// ---------------------------------------------------------------------------
-
 void SemanticAnalyzer::visit(parser::LiteralExpr& node) {
     switch (node.kind) {
         case LiteralExpr::Kind::Integer: node.resolvedType = DataType::Int; break;
@@ -96,15 +88,12 @@ void SemanticAnalyzer::visit(parser::LiteralExpr& node) {
 
 void SemanticAnalyzer::visit(parser::ColumnRef& node) {
     if (node.computed) {
-        // A computed select-list item: analyze the wrapped expression and take
-        // its resolved type; it projects a value rather than a stored column.
         node.computed->accept(*this);
         node.resolvedType = node.computed->resolvedType;
         node.columnIndex = -1;
         return;
     }
     if (joinMode_) {
-        // Resolve against the two joined tables, honoring qualifiers.
         if (!node.table.empty()) {
             if (node.table == leftTable_->name) {
                 int idx = leftTable_->columnIndex(node.column);
@@ -273,7 +262,6 @@ void SemanticAnalyzer::visit(parser::FunctionExpr& node) {
 }
 
 void SemanticAnalyzer::visit(parser::SubqueryExpr& node) {
-    // Analyze the inner query in its own scope, then restore ours.
     const TableSchema* savedTable = currentTable_;
     const TableSchema* savedLeft = leftTable_;
     const TableSchema* savedRight = rightTable_;
@@ -292,16 +280,10 @@ void SemanticAnalyzer::visit(parser::SubqueryExpr& node) {
     leftColumnCount_ = savedLeftCount;
     joinMode_ = savedJoin;
 
-    // EXISTS is boolean; a scalar subquery's type is left unresolved (treated
-    // like NULL for type checking, so comparisons against it are permitted).
     node.resolvedType =
         (node.kind == parser::SubqueryExpr::Kind::Exists) ? std::optional<DataType>(DataType::Bool)
                                                           : std::nullopt;
 }
-
-// ---------------------------------------------------------------------------
-// Statements
-// ---------------------------------------------------------------------------
 
 void SemanticAnalyzer::visit(parser::CreateStatement& node) {
     if (catalog_.hasTable(node.table)) {
@@ -358,7 +340,6 @@ void SemanticAnalyzer::visit(parser::CreateStatement& node) {
     catalog_.createTable(node.table, columns, id);
     node.tableId = id;
 
-    // Register inline foreign keys after the table exists.
     for (std::size_t i = 0; i < node.columns.size(); ++i) {
         const auto& def = node.columns[i];
         if (def.refTable.empty()) continue;
@@ -380,8 +361,6 @@ void SemanticAnalyzer::visit(parser::CreateStatement& node) {
                                def.refColumn);
     }
 
-    // Bind CHECK expressions against the now-registered table (the catalog's
-    // column copies share these expression objects, so this binds them too).
     for (const auto& def : node.columns) {
         if (def.checkExpr) {
             bindExpression(*def.checkExpr, node.table);
@@ -415,7 +394,6 @@ void SemanticAnalyzer::visit(parser::InsertStatement& node) {
     currentTable_ = table;
     node.tableId = table->tableId;
 
-    // Resolve the target column list (explicit list, or all columns in order).
     std::vector<int> targets;
     if (node.columns.empty()) {
         for (int i = 0; i < static_cast<int>(table->columns.size()); ++i) {
@@ -637,4 +615,4 @@ void SemanticAnalyzer::checkPredicate(parser::Expression& expr) {
     }
 }
 
-}  // namespace db::semantic
+}

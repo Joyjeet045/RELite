@@ -8,8 +8,8 @@ namespace db::backend {
 
 void Page::init() {
     std::memset(bytes_, 0, PAGE_SIZE);
-    writeU16(0, 0);                                        // slotCount
-    writeU16(2, static_cast<std::uint16_t>(PAGE_SIZE));    // freeSpaceOffset
+    writeU16(0, 0);
+    writeU16(2, static_cast<std::uint16_t>(PAGE_SIZE));
 }
 
 std::uint16_t Page::readU16(int offset) const {
@@ -59,8 +59,6 @@ bool Page::insert(const std::string& record, int& outSlot) {
         return false;
     }
     if (freeSpace() < need + SLOT_SIZE) {
-        // Not enough contiguous space. Reclaim tombstoned tuple bytes and retry
-        // if the total reclaimable space would be enough.
         if (usableSpace() < need + SLOT_SIZE) {
             return false;
         }
@@ -94,12 +92,11 @@ int Page::freeBytes() const { return usableSpace(); }
 
 void Page::compact() {
     int count = slotCount();
-    // Snapshot live tuples first (the rewrite overwrites the data region).
     std::vector<std::pair<int, std::string>> live;
     for (int s = 0; s < count; ++s) {
         std::uint16_t offset, length;
         slotAt(s, offset, length);
-        if (length == 0) continue;  // tombstone
+        if (length == 0) continue;
         live.emplace_back(s, std::string(bytes_ + offset, length));
     }
     std::uint16_t freeEnd = static_cast<std::uint16_t>(PAGE_SIZE);
@@ -127,7 +124,7 @@ bool Page::erase(int slot) {
     }
     std::uint16_t offset, length;
     slotAt(slot, offset, length);
-    setSlot(slot, offset, 0);  // tombstone: keep offset, zero the length
+    setSlot(slot, offset, 0);
     return true;
 }
 
@@ -139,11 +136,11 @@ bool Page::update(int slot, const std::string& record) {
     slotAt(slot, offset, length);
     const int need = static_cast<int>(record.size());
     if (need == 0 || need > length) {
-        return false;  // caller must relocate
+        return false;
     }
     std::memcpy(bytes_ + offset, record.data(), need);
     setSlot(slot, offset, static_cast<std::uint16_t>(need));
     return true;
 }
 
-}  // namespace db::backend
+}

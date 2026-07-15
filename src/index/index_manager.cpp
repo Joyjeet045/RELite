@@ -19,7 +19,7 @@ std::string keyBytes(const vm::Value& v) {
     return std::string();
 }
 
-}  // namespace
+}
 
 void Index::add(const vm::Value& key, const vm::RecordID& rid) {
     tree.insert(key, rid);
@@ -32,7 +32,7 @@ bool Index::remove(const vm::Value& key, const vm::RecordID& rid) {
 
 std::vector<vm::RecordID> Index::lookup(const vm::Value& key) const {
     if (!bloom.mightContain(keyBytes(key))) {
-        return {};  // definitely absent
+        return {};
     }
     return tree.lookup(key);
 }
@@ -90,4 +90,4 @@ void IndexManager::dropTable(int tableId) {
     }
 }
 
-}  // namespace db::index
+}

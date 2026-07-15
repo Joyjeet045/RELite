@@ -33,7 +33,6 @@ constexpr const char* kDefaultDbFile = "prqlite.db";
 constexpr const char* kDefaultWalFile = "prqlite.wal";
 constexpr const char* kMetaFile = "prqlite.meta";
 
-// Reset the WAL once it has grown past this many records (a checkpoint).
 constexpr std::size_t kCheckpointRecords = 256;
 
 std::string trim(const std::string& s) {
@@ -50,8 +49,6 @@ std::string cellText(const vm::Value& v) {
     return v.isNull() ? "NULL" : v.toString();
 }
 
-// Renders a query ResultSet as an aligned text table; DML/DDL results as their
-// status line.
 std::string formatResult(const vm::ResultSet& rs) {
     if (!rs.isQuery) {
         return rs.message + "\n";
@@ -91,14 +88,13 @@ std::string formatResult(const vm::ResultSet& rs) {
     return os.str();
 }
 
-}  // namespace
+}
 
 DB::DB()
     : storage_(std::make_unique<vm::StorageEngine>(kDefaultDbFile, /*truncate=*/false)),
       wal_(std::make_unique<txn::WriteAheadLog>(kDefaultWalFile, /*truncate=*/false)),
       locks_(std::make_unique<txn::LockManager>()),
       txnMgr_(std::make_unique<txn::TransactionManager>(wal_.get(), locks_.get())) {
-    // Flush the WAL before any dirty page is stolen to disk (WAL protocol).
     storage_->bufferPool().setPreEvictHook([this] {
         if (wal_) wal_->flush();
     });
@@ -108,7 +104,6 @@ DB::DB()
 }
 
 DB::~DB() {
-    // An open transaction at shutdown is aborted (never implicitly committed).
     if (txnMgr_ && currentTxn_ != 0) {
         txnMgr_->rollback(currentTxn_);
         currentTxn_ = 0;
@@ -141,13 +136,9 @@ std::string DB::connect(const std::string& query) {
     try {
         vm::ExecutorEngine engine(*storage_, catalog, txnMgr_.get(), &currentTxn_);
         vm::ResultSet rs = engine.run(*stmt);
-        // Persist after any statement that may have changed data or schema, and
-        // only when not inside an open transaction (COMMIT/ROLLBACK flush later).
         if (!rs.isQuery && currentTxn_ == 0) {
             storage_->flush();
             saveCatalog();
-            // Checkpoint: the log's effects are now durable, so it can be reset
-            // to bound its growth over a long-running session.
             if (wal_ && wal_->pendingRecords() >= kCheckpointRecords) {
                 wal_->reset();
             }
@@ -159,13 +150,11 @@ std::string DB::connect(const std::string& query) {
 }
 
 void DB::saveCatalog() {
-    // Write to a temporary file, fsync it, then atomically rename over the real
-    // metadata file so a crash mid-write can never corrupt the catalog.
     const std::string tmpPath = std::string(kMetaFile) + ".tmp";
     {
         std::ofstream out(tmpPath, std::ios::trunc | std::ios::binary);
         if (!out) return;
-        out.precision(17);  // preserve full double precision for float defaults
+        out.precision(17);
 
         auto& cat = catalog_;
         out << "PRQLITE4\n";
@@ -214,7 +203,6 @@ void DB::saveCatalog() {
     std::error_code ec;
     std::filesystem::rename(tmpPath, kMetaFile, ec);
     if (ec) {
-        // Fall back to a copy+remove if rename across the same directory failed.
         std::filesystem::copy_file(
             tmpPath, kMetaFile, std::filesystem::copy_options::overwrite_existing, ec);
         std::filesystem::remove(tmpPath, ec);
@@ -263,7 +251,7 @@ void DB::loadCatalog() {
                 col.defaultValue.intValue = dint;
                 col.defaultValue.boolValue = db != 0;
                 col.defaultValue.doubleValue = ddbl;
-                in.get();  // consume the single separating space before the text
+                in.get();
                 std::string txt(static_cast<std::size_t>(tlen), '\0');
                 if (tlen > 0) in.read(&txt[0], static_cast<std::streamsize>(tlen));
                 col.defaultValue.stringValue = std::move(txt);
@@ -271,7 +259,7 @@ void DB::loadCatalog() {
             if (ver >= 3) {
                 long long clen = 0;
                 in >> clen;
-                in.get();  // separating space
+                in.get();
                 std::string csrc(static_cast<std::size_t>(clen), '\0');
                 if (clen > 0) in.read(&csrc[0], static_cast<std::streamsize>(clen));
                 col.checkSource = std::move(csrc);
@@ -299,8 +287,6 @@ void DB::loadCatalog() {
     }
     cat.setNextTableId(nextId);
 
-    // Re-parse and re-bind persisted CHECK constraints (all tables are now
-    // registered, so column references resolve).
     for (const semantic::TableSchema* ts : cat.allTables()) {
         for (int c = 0; c < static_cast<int>(ts->columns.size()); ++c) {
             const std::string& src = ts->columns[c].checkSource;
@@ -313,13 +299,10 @@ void DB::loadCatalog() {
                 analyzer.bindExpression(*expr, ts->name);
                 cat.setColumnCheckExpr(ts->name, c, std::move(expr));
             } catch (const std::exception&) {
-                // Ignore an unparseable check rather than fail startup.
             }
         }
     }
 
-    // Register index definitions in the catalog; the actual index structures are
-    // (re)built by rebuildIndexes() after any recovery has adjusted the data.
     int nidx = 0;
     in >> nidx;
     for (int i = 0; i < nidx; ++i) {
@@ -358,9 +341,6 @@ void DB::recover() {
         if (r.type == txn::LogType::Commit) committed.insert(r.txnId);
     }
 
-    // Undo the effects of every transaction that did not commit (steal/force
-    // policy => undo-only recovery). Process in reverse so nested effects unwind
-    // in the right order.
     for (auto it = records.rbegin(); it != records.rend(); ++it) {
         const txn::LogRecord& r = *it;
         if (committed.count(r.txnId) != 0) continue;
@@ -371,7 +351,6 @@ void DB::recover() {
         }
     }
 
-    // Durably checkpoint the recovered state, then start a fresh log.
     storage_->flush();
     saveCatalog();
     wal_->reset();
@@ -393,7 +372,6 @@ void DB::run() {
     while (std::getline(std::cin, line)) {
         std::string trimmed = trim(line);
 
-        // Meta-commands are only recognized at the start of a fresh statement.
         if (!inStatement && !trimmed.empty() && trimmed[0] == '\\') {
             if (trimmed == "\\q") {
                 break;
@@ -421,7 +399,6 @@ void DB::run() {
         }
         buffer += line;
 
-        // Execute every complete (';'-terminated) statement in the buffer.
         std::size_t semi;
         while ((semi = buffer.find(';')) != std::string::npos) {
             std::string statement = buffer.substr(0, semi);
@@ -439,4 +416,4 @@ void DB::run() {
     std::cout << "\nBye.\n";
 }
 
-}  // namespace db
+}

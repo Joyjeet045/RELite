@@ -7,8 +7,6 @@
 
 namespace db::vm {
 
-// The outcome of running a statement: either a query result (column headers +
-// rows) or a status message for DML/DDL.
 struct ResultSet {
     bool isQuery = false;
     std::vector<std::string> columns;
@@ -16,4 +14,4 @@ struct ResultSet {
     std::string message;
 };
 
-}  // namespace db::vm
+}

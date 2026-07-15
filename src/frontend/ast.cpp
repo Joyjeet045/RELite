@@ -32,7 +32,7 @@ namespace {
 std::string quoteString(const std::string& s) {
     std::string out = "'";
     for (char c : s) {
-        if (c == '\'') out += "''";  // SQL-escape single quotes
+        if (c == '\'') out += "''";
         else out += c;
     }
     out += "'";
@@ -50,7 +50,7 @@ std::string literalText(const LiteralExpr& l) {
     return "NULL";
 }
 
-}  // namespace
+}
 
 std::string expressionToString(const Expression& e) {
     if (auto* l = dynamic_cast<const LiteralExpr*>(&e)) {
@@ -111,7 +111,6 @@ std::string expressionToString(const Expression& e) {
     throw std::runtime_error("unsupported expression in CHECK constraint");
 }
 
-// accept() implementations: each forwards to the matching visitor overload.
 void LiteralExpr::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ColumnRef::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void BinaryExpr::accept(ASTVisitor& visitor) { visitor.visit(*this); }
@@ -134,4 +133,4 @@ void DropStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AlterStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void TransactionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 
-}  // namespace db::parser
+}

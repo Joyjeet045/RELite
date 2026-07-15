@@ -76,7 +76,6 @@ void testSelectQualifiedColumns() {
     assert(s->columns[1]->table.empty() && s->columns[1]->column == "b");
 }
 
-// a = 1 OR b = 2 AND c = 3  ==>  a=1 OR (b=2 AND c=3)
 void testWherePrecedence() {
     auto node = parse("FETCH * FROM t WHEN a = 1 OR b = 2 AND c = 3;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
@@ -107,7 +106,7 @@ void testDelete() {
 }
 
 void testTrailingSemicolonOptional() {
-    auto node = parse("FETCH * FROM t");  // no ';'
+    auto node = parse("FETCH * FROM t");
     assert(dynamic_cast<SelectStatement*>(node.get()) != nullptr);
 }
 
@@ -125,16 +124,16 @@ void expectParseError(const std::string& sql) {
 }
 
 void testSyntaxErrors() {
-    expectParseError("FETCH FROM t;");          // missing projection
-    expectParseError("FETCH * t;");             // missing FROM
-    expectParseError("BUILD RELATION t (id);");    // missing column type
-    expectParseError("PUT INTO t VALUES 1;"); // missing '('
-    expectParseError("FETCH * FROM t WHEN;");  // missing predicate
-    expectParseError("FETCH * FROM t extra;");  // trailing tokens
-    expectParseError("");                        // empty input
+    expectParseError("FETCH FROM t;");
+    expectParseError("FETCH * t;");
+    expectParseError("BUILD RELATION t (id);");
+    expectParseError("PUT INTO t VALUES 1;");
+    expectParseError("FETCH * FROM t WHEN;");
+    expectParseError("FETCH * FROM t extra;");
+    expectParseError("");
 }
 
-}  // namespace
+}
 
 int main() {
     testCreateTable();

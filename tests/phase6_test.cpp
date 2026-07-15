@@ -59,34 +59,29 @@ void testForeignKeys(Harness& h) {
     h.run("PUT INTO emp VALUES (1,'Alice',1);");
     h.run("PUT INTO emp VALUES (2,'Bob',2);");
 
-    expectThrow(h, "PUT INTO emp VALUES (3,'Carol',99);");  // parent 99 missing
-    h.run("PUT INTO emp VALUES (4,'Dave',NULL);");          // NULL FK allowed
+    expectThrow(h, "PUT INTO emp VALUES (3,'Carol',99);");
+    h.run("PUT INTO emp VALUES (4,'Dave',NULL);");
     assert(h.run("FETCH id FROM emp;").rows.size() == 3);
 
-    expectThrow(h, "MODIFY emp SET dept_id = 99 WHEN id = 1;");  // FK on update
-    expectThrow(h, "REMOVE FROM dept WHEN id = 1;");             // referenced by Alice
+    expectThrow(h, "MODIFY emp SET dept_id = 99 WHEN id = 1;");
+    expectThrow(h, "REMOVE FROM dept WHEN id = 1;");
 }
 
 void testSubqueries(Harness& h) {
-    // Scalar subquery.
     auto s1 = h.run(
         "FETCH name FROM emp WHEN dept_id = (FETCH id FROM dept WHEN dname = 'sales');");
     assert(s1.rows.size() == 1 && s1.rows[0][0].textValue == "Bob");
 
-    // IN (subquery).
     auto s2 = h.run("FETCH name FROM emp WHEN dept_id IN (FETCH id FROM dept);");
-    assert(s2.rows.size() == 2);  // Alice, Bob (Dave's NULL excluded)
+    assert(s2.rows.size() == 2);
 
-    // NOT IN (subquery).
     auto s3 = h.run(
         "FETCH name FROM emp WHEN dept_id NOT IN (FETCH id FROM dept WHEN dname='eng');");
     assert(s3.rows.size() == 1 && s3.rows[0][0].textValue == "Bob");
 
-    // EXISTS (uncorrelated) -> true for all rows.
     auto s4 = h.run("FETCH name FROM emp WHEN EXISTS (FETCH id FROM dept WHEN id = 2);");
     assert(s4.rows.size() == 3);
 
-    // NOT EXISTS -> false for all -> no rows.
     auto s5 =
         h.run("FETCH name FROM emp WHEN NOT EXISTS (FETCH id FROM dept WHEN id = 2);");
     assert(s5.rows.empty());
@@ -96,7 +91,6 @@ void testAlterTable(Harness& h) {
     h.run("BUILD RELATION t (id INT, name TEXT);");
     h.run("PUT INTO t VALUES (1,'a'),(2,'b');");
 
-    // ADD COLUMN: existing rows get NULL.
     h.run("RESHAPE RELATION t ADD COLUMN age INT;");
     auto a1 = h.run("FETCH age FROM t WHEN id = 1;");
     assert(a1.rows.size() == 1 && a1.rows[0][0].isNull());
@@ -105,7 +99,6 @@ void testAlterTable(Harness& h) {
     auto a2 = h.run("FETCH age FROM t WHEN id = 3;");
     assert(a2.rows[0][0].intValue == 30);
 
-    // DISCARD COLUMN: schema shrinks.
     h.run("RESHAPE RELATION t DISCARD COLUMN name;");
     auto a3 = h.run("FETCH * FROM t WHEN id = 3;");
     assert(a3.columns.size() == 2);
@@ -127,7 +120,7 @@ void run() {
     std::cout << "All Phase V+ tests passed (subqueries, foreign keys, ALTER).\n";
 }
 
-}  // namespace
+}
 
 int main() {
     run();

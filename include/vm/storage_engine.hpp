@@ -10,9 +10,6 @@
 
 namespace db::vm {
 
-// Owns the on-disk storage stack (disk manager -> buffer pool -> table
-// manager) plus the index registry for a database session. Declaration order
-// matters: each layer depends on the previous one being constructed first.
 class StorageEngine {
 public:
     explicit StorageEngine(const std::string& path, bool truncate = true,
@@ -36,4 +33,4 @@ private:
     index::IndexManager indexes_;
 };
 
-}  // namespace db::vm
+}

@@ -36,7 +36,7 @@ int BufferPool::acquireFrame() {
         return idx;
     }
     if (lru_.empty()) {
-        return -1;  // all frames pinned
+        return -1;
     }
     int victim = lru_.front();
     lru_.pop_front();
@@ -44,8 +44,6 @@ int BufferPool::acquireFrame() {
 
     Frame& f = frames_[victim];
     if (f.valid && f.dirty) {
-        // WAL protocol: make the log durable before this (possibly uncommitted)
-        // page is stolen to disk, so it can be undone on recovery.
         if (preEvictHook_) preEvictHook_();
         disk_->writePage(f.pageId, f.page.data());
     }
@@ -143,4 +141,4 @@ void BufferPool::flushAll() {
     }
 }
 
-}  // namespace db::backend
+}

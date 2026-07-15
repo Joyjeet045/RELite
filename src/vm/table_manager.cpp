@@ -33,14 +33,12 @@ RecordID TableManager::insertTuple(int tableId, const std::string& bytes) {
     auto& list = pages_[tableId];
     const int needed = static_cast<int>(bytes.size()) + backend::Page::SLOT_SIZE;
 
-    // Reuse free space in any existing page (most-recent first for locality),
-    // consulting the free-space map to skip pages known to be full.
     for (auto rit = list.rbegin(); rit != list.rend(); ++rit) {
         backend::PageId pid = *rit;
         auto hint = pageFree_.find(pid);
         if (hint != pageFree_.end() && hint->second < needed) continue;
         backend::Page* page = pool_->fetchPage(pid);
-        if (page == nullptr) continue;  // buffer pool exhausted; try another
+        if (page == nullptr) continue;
         backend::PageGuard guard(pool_, pid, page);
         int slot;
         if (page->insert(bytes, slot)) {
@@ -48,14 +46,13 @@ RecordID TableManager::insertTuple(int tableId, const std::string& bytes) {
             pageFree_[pid] = page->freeBytes();
             return RecordID{pid, slot};
         }
-        pageFree_[pid] = page->freeBytes();  // record that it is (near) full
+        pageFree_[pid] = page->freeBytes();
     }
 
-    // Allocate a fresh page.
     backend::PageId pid;
     backend::Page* page = pool_->newPage(pid);
     if (page == nullptr) {
-        return RecordID{};  // buffer pool exhausted (all frames pinned)
+        return RecordID{};
     }
     backend::PageGuard guard(pool_, pid, page);
     list.push_back(pid);
@@ -65,7 +62,7 @@ RecordID TableManager::insertTuple(int tableId, const std::string& bytes) {
         pageFree_[pid] = page->freeBytes();
         return RecordID{pid, slot};
     }
-    return RecordID{};  // row larger than a page
+    return RecordID{};
 }
 
 bool TableManager::getTuple(int tableId, const RecordID& rid, std::string& out) {
@@ -84,7 +81,7 @@ bool TableManager::eraseTuple(int tableId, const RecordID& rid) {
     if (page->erase(rid.slotId)) {
         guard.markDirty();
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        pageFree_[rid.pageId] = page->freeBytes();  // space freed up
+        pageFree_[rid.pageId] = page->freeBytes();
         return true;
     }
     return false;
@@ -100,7 +97,6 @@ RecordID TableManager::updateTuple(int tableId, const RecordID& rid,
             guard.markDirty();
             return rid;
         }
-        // Does not fit in place: tombstone here, relocate below.
         if (page->erase(rid.slotId)) {
             guard.markDirty();
             std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -109,10 +105,6 @@ RecordID TableManager::updateTuple(int tableId, const RecordID& rid,
     }
     return insertTuple(tableId, bytes);
 }
-
-// ---------------------------------------------------------------------------
-// TableIterator
-// ---------------------------------------------------------------------------
 
 TableIterator::TableIterator(TableManager* manager, int tableId)
     : manager_(manager), tableId_(tableId) {
@@ -146,9 +138,9 @@ void TableIterator::advanceToLive() {
                 return;
             }
         }
-        slot_ = -1;  // reset for next page
+        slot_ = -1;
     }
     valid_ = false;
 }
 
-}  // namespace db::vm
+}

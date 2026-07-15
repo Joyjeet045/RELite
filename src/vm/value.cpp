@@ -10,7 +10,6 @@ namespace {
 std::string formatDouble(double v) {
     if (std::isfinite(v) && v == std::floor(v) &&
         std::abs(v) < 1e15) {
-        // Whole number: show one decimal place so it reads as a real.
         std::ostringstream os;
         os << static_cast<std::int64_t>(v) << ".0";
         return os.str();
@@ -27,7 +26,7 @@ double asDouble(const Value& v) {
                                        : static_cast<double>(v.intValue);
 }
 
-}  // namespace
+}
 
 std::string Value::toString() const {
     switch (type) {
@@ -44,7 +43,6 @@ std::optional<int> compareValues(const Value& a, const Value& b) {
     if (a.isNull() || b.isNull()) {
         return std::nullopt;
     }
-    // Numeric comparison spans Int and Double (e.g. HAVING AVG(x) > 5).
     if (isNumeric(a.type) && isNumeric(b.type)) {
         if (a.type == ValueType::Int && b.type == ValueType::Int) {
             if (a.intValue < b.intValue) return -1;
@@ -71,7 +69,6 @@ std::optional<int> compareValues(const Value& a, const Value& b) {
 
 bool valueLess(const Value& a, const Value& b) {
     if (a.isNull() || b.isNull()) {
-        // NULL sorts before any non-null; two NULLs are equal (not less).
         return a.isNull() && !b.isNull();
     }
     if (isNumeric(a.type) && isNumeric(b.type)) {
@@ -85,4 +82,4 @@ bool valueLess(const Value& a, const Value& b) {
     return cmp.has_value() && *cmp < 0;
 }
 
-}  // namespace db::vm
+}

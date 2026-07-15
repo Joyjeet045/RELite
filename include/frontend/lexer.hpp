@@ -8,13 +8,10 @@
 
 namespace db::parser {
 
-// Hand-written scanner for our SQL subset. No regex, no external libraries.
-// Produces a token stream that always ends with an END_OF_FILE token.
 class Lexer {
 public:
     explicit Lexer(std::string source);
 
-    // Scans the entire source and returns the full token stream.
     std::vector<Token> tokenize();
 
 private:
@@ -38,4 +35,4 @@ private:
     Token makeToken(TokenType type, std::string lexeme, int startColumn) const;
 };
 
-}  // namespace db::parser
+}

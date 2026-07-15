@@ -11,12 +11,10 @@ namespace db::backend {
 DiskManager::DiskManager(const std::string& path, bool truncate) : path_(path) {
     auto mode = std::ios::in | std::ios::out | std::ios::binary;
     if (truncate) {
-        // Create/clear the file first.
         std::fstream create(path_, std::ios::out | std::ios::binary | std::ios::trunc);
     }
     file_.open(path_, mode);
     if (!file_.is_open()) {
-        // File does not exist yet: create then reopen for read+write.
         file_.clear();
         std::fstream create(path_, std::ios::out | std::ios::binary);
         create.close();
@@ -81,4 +79,4 @@ void DiskManager::sync() {
     syncFileToDisk(path_);
 }
 
-}  // namespace db::backend
+}

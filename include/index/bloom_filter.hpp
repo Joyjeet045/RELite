@@ -7,10 +7,6 @@
 
 namespace db::index {
 
-// Probabilistic set membership backed by a lock-free atomic bit array with k
-// hash functions (double hashing). add() and mightContain() are thread-safe.
-// mightContain() may return false positives but never false negatives, so it is
-// used to skip work when a key is definitely absent.
 class BloomFilter {
 public:
     BloomFilter(std::size_t expectedItems, std::size_t numHashes = 4);
@@ -32,4 +28,4 @@ private:
     std::vector<std::atomic<std::uint64_t>> words_;
 };
 
-}  // namespace db::index
+}

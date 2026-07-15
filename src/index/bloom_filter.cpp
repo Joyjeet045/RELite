@@ -19,12 +19,10 @@ std::uint64_t fnv1a(const void* data, std::size_t len, std::uint64_t seed) {
 constexpr std::uint64_t kSeed1 = 1469598103934665603ULL;
 constexpr std::uint64_t kSeed2 = 1099511628211ULL;
 
-}  // namespace
+}
 
 BloomFilter::BloomFilter(std::size_t expectedItems, std::size_t numHashes)
     : numHashes_(numHashes == 0 ? 1 : numHashes) {
-    // ~ m = k * n / ln2 bits gives a reasonable false-positive rate; round up
-    // to whole 64-bit words with a small floor.
     std::size_t bits = (expectedItems == 0 ? 1 : expectedItems) * numHashes_ * 2;
     if (bits < 64) bits = 64;
     std::size_t wordCount = (bits + 63) / 64;
@@ -38,7 +36,7 @@ BloomFilter::BloomFilter(std::size_t expectedItems, std::size_t numHashes)
 void BloomFilter::locate(const std::string& key, std::size_t i, std::size_t& word,
                          std::uint64_t& mask) const {
     std::uint64_t h1 = fnv1a(key.data(), key.size(), kSeed1);
-    std::uint64_t h2 = fnv1a(key.data(), key.size(), kSeed2) | 1ULL;  // odd step
+    std::uint64_t h2 = fnv1a(key.data(), key.size(), kSeed2) | 1ULL;
     std::uint64_t bit = (h1 + i * h2) % numBits_;
     word = static_cast<std::size_t>(bit / 64);
     mask = 1ULL << (bit % 64);
@@ -73,4 +71,4 @@ bool BloomFilter::mightContainInt(std::int64_t value) const {
     return mightContain(std::string(reinterpret_cast<const char*>(&value), sizeof(value)));
 }
 
-}  // namespace db::index
+}

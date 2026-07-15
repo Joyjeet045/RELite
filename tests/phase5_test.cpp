@@ -17,8 +17,6 @@ using namespace db;
 
 namespace {
 
-// A per-session harness: storage + WAL + locks + transaction manager, sharing a
-// current-transaction id across statements.
 struct Harness {
     vm::StorageEngine se;
     txn::WriteAheadLog wal;
@@ -53,51 +51,41 @@ void run() {
     h.run("PUT INTO emp VALUES (1,'Alice','eng',100),(2,'Bob','eng',200),"
           "(3,'Carol','sales',150),(4,'Dave','sales',NULL);");
 
-    // Aggregates.
     assert(scalarInt(h.run("FETCH COUNT(*) FROM emp;")) == 4);
-    assert(scalarInt(h.run("FETCH SUM(salary) FROM emp;")) == 450);  // NULL ignored
+    assert(scalarInt(h.run("FETCH SUM(salary) FROM emp;")) == 450);
     assert(scalarInt(h.run("FETCH MIN(salary) FROM emp;")) == 100);
     assert(scalarInt(h.run("FETCH MAX(salary) FROM emp;")) == 200);
-    assert(scalarInt(h.run("FETCH COUNT(salary) FROM emp;")) == 3);  // NULL not counted
+    assert(scalarInt(h.run("FETCH COUNT(salary) FROM emp;")) == 3);
 
-    // GROUP BY.
     auto grouped = h.run("FETCH dept, COUNT(*) FROM emp GROUP BY dept;");
     assert(grouped.columns.size() == 2 && grouped.rows.size() == 2);
     assert(grouped.rows[0][0].textValue == "eng" && grouped.rows[0][1].intValue == 2);
 
-    // HAVING (on the grouping column).
     auto having = h.run("FETCH dept FROM emp GROUP BY dept HAVING dept = 'sales';");
     assert(having.rows.size() == 1 && having.rows[0][0].textValue == "sales");
 
-    // NULL handling.
     assert(h.run("FETCH id FROM emp WHEN salary IS NULL;").rows.size() == 1);
     assert(h.run("FETCH id FROM emp WHEN salary IS NOT NULL;").rows.size() == 3);
 
-    // IN / NOT IN.
     assert(h.run("FETCH id FROM emp WHEN id IN (1, 2);").rows.size() == 2);
     assert(h.run("FETCH id FROM emp WHEN id NOT IN (1, 2);").rows.size() == 2);
 
-    // BETWEEN.
     assert(h.run("FETCH id FROM emp WHEN id BETWEEN 2 AND 3;").rows.size() == 2);
 
-    // LIKE.
     auto like = h.run("FETCH name FROM emp WHEN name LIKE 'A%';");
     assert(like.rows.size() == 1 && like.rows[0][0].textValue == "Alice");
-    assert(h.run("FETCH name FROM emp WHEN name LIKE '_o%';").rows.size() == 1);  // Bob
+    assert(h.run("FETCH name FROM emp WHEN name LIKE '_o%';").rows.size() == 1);
 
-    // SORT BY + TAKE.
     auto ordered = h.run("FETCH id FROM emp SORT BY id DESC;");
     assert(ordered.rows.size() == 4 && ordered.rows[0][0].intValue == 4);
     auto limited = h.run("FETCH id FROM emp SORT BY id ASC TAKE 2;");
     assert(limited.rows.size() == 2 && limited.rows[0][0].intValue == 1 &&
            limited.rows[1][0].intValue == 2);
 
-    // MODIFY.
     h.run("MODIFY emp SET salary = 175 WHEN id = 4;");
     assert(scalarInt(h.run("FETCH salary FROM emp WHEN id = 4;")) == 175);
     assert(h.run("FETCH id FROM emp WHEN salary IS NULL;").rows.empty());
 
-    // Transactions: undo a PUT.
     int before = scalarInt(h.run("FETCH COUNT(*) FROM emp;"));
     h.run("START;");
     h.run("PUT INTO emp VALUES (5,'Eve','eng',300);");
@@ -105,21 +93,18 @@ void run() {
     h.run("UNDO;");
     assert(scalarInt(h.run("FETCH COUNT(*) FROM emp;")) == before);
 
-    // Transactions: undo a REMOVE.
     h.run("START;");
     h.run("REMOVE FROM emp WHEN id = 1;");
     assert(h.run("FETCH id FROM emp WHEN id = 1;").rows.empty());
     h.run("UNDO;");
     assert(h.run("FETCH id FROM emp WHEN id = 1;").rows.size() == 1);
 
-    // Transactions: save a MODIFY.
     h.run("START;");
     h.run("MODIFY emp SET dept = 'mgmt' WHEN id = 1;");
     h.run("SAVE;");
     auto committed = h.run("FETCH dept FROM emp WHEN id = 1;");
     assert(committed.rows[0][0].textValue == "mgmt");
 
-    // LINK (inner join). emp.dept values are now {mgmt, eng, sales, sales}.
     h.run("BUILD RELATION dept (dname TEXT, floor INT);");
     h.run("PUT INTO dept VALUES ('eng', 3), ('sales', 1), ('mgmt', 5);");
     auto joined =
@@ -128,10 +113,9 @@ void run() {
     auto joinFiltered = h.run(
         "FETCH emp.name FROM emp LINK dept ON emp.dept = dept.dname "
         "WHEN dept.floor = 1;");
-    assert(joinFiltered.rows.size() == 2);  // both sales employees
+    assert(joinFiltered.rows.size() == 2);
     h.run("DISCARD RELATION dept;");
 
-    // DISCARD INDEX / DISCARD RELATION.
     h.run("BUILD INDEX emp_id ON emp (id);");
     h.run("DISCARD INDEX emp_id;");
     h.run("DISCARD RELATION emp;");
@@ -143,7 +127,7 @@ void run() {
     std::cout << "All Phase V tests passed.\n";
 }
 
-}  // namespace
+}
 
 int main() {
     run();

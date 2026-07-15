@@ -22,7 +22,6 @@ ASTNodePtr parse(const std::string& sql) {
     return parser.parseStatement();
 }
 
-// Parses and analyzes `sql`, returning the bound AST for inspection.
 ASTNodePtr analyze(const std::string& sql) {
     auto node = parse(sql);
     SemanticAnalyzer analyzer(Catalog::instance());
@@ -72,7 +71,6 @@ void testInsertArityMismatch() {
 }
 
 void testInsertTypeMismatch() {
-    // id is INT but given a string literal.
     expectSemanticError("PUT INTO friend VALUES ('nope', 'garv', TRUE);");
 }
 
@@ -84,8 +82,8 @@ void testSelectBindsColumns() {
     auto node = analyze("FETCH id, name FROM friend WHEN name = 'garv' OR id = 5;");
     auto* s = dynamic_cast<SelectStatement*>(node.get());
     assert(s != nullptr && s->tableId >= 0);
-    assert(s->columns[0]->columnIndex == 0);  // id
-    assert(s->columns[1]->columnIndex == 1);  // name
+    assert(s->columns[0]->columnIndex == 0);
+    assert(s->columns[1]->columnIndex == 1);
     assert(s->where->resolvedType == DataType::Bool);
 }
 
@@ -105,7 +103,6 @@ void testSelectUnknownColumn() {
 }
 
 void testWhereNonBooleanRejected() {
-    // A bare INT column is not a valid predicate.
     expectSemanticError("FETCH * FROM friend WHEN id;");
 }
 
@@ -135,12 +132,11 @@ void testDeleteBinds() {
     assert(d->where->resolvedType == DataType::Bool);
 }
 
-}  // namespace
+}
 
 int main() {
     Catalog::instance().reset();
 
-    // Ordered: the CREATE below establishes the schema the rest depend on.
     testCreateBindsAndRegisters();
     testDuplicateTableRejected();
     testDuplicateColumnRejected();

@@ -10,9 +10,6 @@
 
 namespace db::vm {
 
-// Volcano iterator-model operator: init() then repeated next() until it returns
-// false. `outRid` is the source row id (valid for base scans, invalid for
-// derived tuples like projections).
 class AbstractExecutor {
 public:
     virtual ~AbstractExecutor() = default;
@@ -20,7 +17,6 @@ public:
     virtual bool next(Tuple& outTuple, RecordID& outRid) = 0;
 };
 
-// Sequential scan over a table's live rows.
 class SeqScanExecutor : public AbstractExecutor {
 public:
     SeqScanExecutor(TableManager* tables, int tableId, Schema schema);
@@ -34,7 +30,6 @@ private:
     std::unique_ptr<TableIterator> it_;
 };
 
-// Passes through only rows for which `predicate` is TRUE.
 class FilterExecutor : public AbstractExecutor {
 public:
     FilterExecutor(std::unique_ptr<AbstractExecutor> child,
@@ -47,7 +42,6 @@ private:
     const parser::Expression* predicate_;
 };
 
-// Emits a subset of columns (by index) from its child.
 class ProjectionExecutor : public AbstractExecutor {
 public:
     ProjectionExecutor(std::unique_ptr<AbstractExecutor> child,
@@ -60,4 +54,4 @@ private:
     std::vector<int> columns_;
 };
 
-}  // namespace db::vm
+}

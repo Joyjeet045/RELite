@@ -6,8 +6,6 @@
 
 namespace db::vm {
 
-// A single runtime value. Mirrors the SQL types plus SQL NULL. Double is a
-// computed-only type (produced by AVG); it is never stored in a table.
 enum class ValueType { Null, Int, Bool, Text, Double };
 
 struct Value {
@@ -47,13 +45,8 @@ struct Value {
     std::string toString() const;
 };
 
-// Three-valued comparison. Returns nullopt if either operand is NULL; otherwise
-// a negative/zero/positive int (like strcmp) for less/equal/greater. Only
-// values of the same family (Int/Bool/Text) are compared.
 std::optional<int> compareValues(const Value& a, const Value& b);
 
-// Total ordering used by ORDER BY. NULLs sort first (smallest). Mixed types are
-// ordered by their ValueType rank, which never happens within one column.
 bool valueLess(const Value& a, const Value& b);
 
-}  // namespace db::vm
+}

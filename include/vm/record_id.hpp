@@ -5,7 +5,6 @@
 
 namespace db::vm {
 
-// Physical address of a row: which page, which slot within that page.
 struct RecordID {
     int pageId = -1;
     int slotId = -1;
@@ -17,7 +16,7 @@ struct RecordID {
     bool valid() const { return pageId >= 0 && slotId >= 0; }
 };
 
-}  // namespace db::vm
+}
 
 namespace std {
 template <>
@@ -27,4 +26,4 @@ struct hash<db::vm::RecordID> {
                static_cast<std::size_t>(r.slotId);
     }
 };
-}  // namespace std
+}

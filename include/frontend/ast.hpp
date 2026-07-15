@@ -13,11 +13,6 @@ class ASTVisitor;
 class SelectStatement;
 class SubqueryExpr;
 
-// ---------------------------------------------------------------------------
-// Shared value / type enums
-// ---------------------------------------------------------------------------
-
-// SQL column data types supported by the subset.
 enum class DataType {
     Int,
     Bool,
@@ -27,7 +22,6 @@ enum class DataType {
 };
 
 std::string_view dataTypeName(DataType type);
-// Comparison operators usable inside a WHERE predicate.
 enum class ComparisonOp {
     Eq,
     Neq,
@@ -39,18 +33,13 @@ enum class ComparisonOp {
 
 std::string_view comparisonOpName(ComparisonOp op);
 
-// Reconstructs SQL source text for an expression (fully parenthesized so it
-// re-parses identically). Used to persist CHECK constraints. Throws for
-// expression kinds not allowed in a CHECK (subqueries, aggregates).
 std::string expressionToString(const class Expression& e);
 
-// Logical connectives for boolean expression trees.
 enum class LogicalOp {
     And,
     Or,
 };
 
-// Arithmetic operators for numeric expression trees.
 enum class ArithmeticOp {
     Add,
     Sub,
@@ -58,8 +47,6 @@ enum class ArithmeticOp {
     Div,
 };
 
-// A scalar value captured from a subquery result. Kept here (rather than
-// reusing vm::Value) so the AST stays independent of the execution layer.
 struct CachedValue {
     enum class Kind { Null, Int, Bool, Text, Float };
     Kind kind = Kind::Null;
@@ -69,11 +56,6 @@ struct CachedValue {
     std::string stringValue;
 };
 
-// ---------------------------------------------------------------------------
-// Base node
-// ---------------------------------------------------------------------------
-
-// Root of the AST hierarchy. Every node accepts a visitor for double dispatch.
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
@@ -82,21 +64,13 @@ public:
 
 using ASTNodePtr = std::unique_ptr<ASTNode>;
 
-// ---------------------------------------------------------------------------
-// Expressions
-// ---------------------------------------------------------------------------
-
-// Base class for expression nodes (WHERE predicates, INSERT values).
 class Expression : public ASTNode {
 public:
-    // Data type of the expression, filled in by the semantic analyzer.
-    // Remains nullopt until binding succeeds.
     std::optional<DataType> resolvedType;
 };
 
 using ExpressionPtr = std::unique_ptr<Expression>;
 
-// A literal constant: 42, 'text', TRUE/FALSE, NULL.
 class LiteralExpr : public Expression {
 public:
     enum class Kind { Integer, String, Boolean, Null, Float };
@@ -110,23 +84,18 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// A reference to a column, optionally table-qualified (t.col).
 class ColumnRef : public Expression {
 public:
-    std::string table;   // empty when unqualified
+    std::string table;
     std::string column;
 
-    // When set, this select-list item is a computed expression (e.g. a * b)
-    // rather than a bare column; `column` then holds a display label.
     ExpressionPtr computed;
 
-    // Filled in by the semantic analyzer.
     int columnIndex = -1;
 
     void accept(ASTVisitor& visitor) override;
 };
 
-// A comparison predicate: left <op> right.
 class BinaryExpr : public Expression {
 public:
     ComparisonOp op = ComparisonOp::Eq;
@@ -136,7 +105,6 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// A logical connective: left AND/OR right.
 class LogicalExpr : public Expression {
 public:
     LogicalOp op = LogicalOp::And;
@@ -146,7 +114,6 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// A numeric arithmetic expression: left (+|-|*|/) right.
 class ArithmeticExpr : public Expression {
 public:
     ArithmeticOp op = ArithmeticOp::Add;
@@ -156,7 +123,6 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// A NOT expression.
 class UnaryExpr : public Expression {
 public:
     ExpressionPtr operand;
@@ -164,27 +130,24 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// operand IS [NOT] NULL.
 class IsNullExpr : public Expression {
 public:
     ExpressionPtr operand;
-    bool negated = false;  // true => IS NOT NULL
-
-    void accept(ASTVisitor& visitor) override;
-};
-
-// value [NOT] IN (item, item, ...)  or  value [NOT] IN (subquery).
-class InExpr : public Expression {
-public:
-    ExpressionPtr value;
-    std::vector<ExpressionPtr> items;
-    std::unique_ptr<SubqueryExpr> subquery;  // non-null => membership over a subquery
     bool negated = false;
 
     void accept(ASTVisitor& visitor) override;
 };
 
-// value [NOT] BETWEEN lo AND hi.
+class InExpr : public Expression {
+public:
+    ExpressionPtr value;
+    std::vector<ExpressionPtr> items;
+    std::unique_ptr<SubqueryExpr> subquery;
+    bool negated = false;
+
+    void accept(ASTVisitor& visitor) override;
+};
+
 class BetweenExpr : public Expression {
 public:
     ExpressionPtr value;
@@ -195,7 +158,6 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// value [NOT] LIKE pattern  (% = any run, _ = any single char).
 class LikeExpr : public Expression {
 public:
     ExpressionPtr value;
@@ -205,20 +167,16 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// An aggregate call in a SELECT list: COUNT(*), SUM(col), MIN/MAX/AVG(col).
 class FunctionExpr : public Expression {
 public:
-    std::string name;                       // upper-cased: COUNT/SUM/AVG/MIN/MAX
-    bool star = false;                      // COUNT(*)
-    bool distinct = false;                  // COUNT(DISTINCT col)
-    std::unique_ptr<ColumnRef> argument;    // null when star
+    std::string name;
+    bool star = false;
+    bool distinct = false;
+    std::unique_ptr<ColumnRef> argument;
 
     void accept(ASTVisitor& visitor) override;
 };
 
-// An uncorrelated subquery used as a scalar (SELECT single-column) or as
-// EXISTS(SELECT ...). The executor evaluates it once and caches the first
-// column of each result row.
 class SubqueryExpr : public Expression {
 public:
     enum class Kind { Scalar, Exists };
@@ -231,37 +189,26 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// ---------------------------------------------------------------------------
-// Statement support types
-// ---------------------------------------------------------------------------
-
-// One column in a CREATE TABLE definition.
 struct ColumnDefinition {
     std::string name;
     DataType type = DataType::Int;
-    int varcharLength = 0;  // meaningful only for Varchar
-    std::string refTable;   // inline FOREIGN KEY: REFERENCES refTable(refColumn)
+    int varcharLength = 0;
+    std::string refTable;
     std::string refColumn;
 
-    // Column constraints.
     bool notNull = false;
     bool primaryKey = false;
     bool unique = false;
     bool hasDefault = false;
-    CachedValue defaultValue;  // literal default (valid when hasDefault)
-    std::shared_ptr<Expression> checkExpr;  // CHECK (expr), null when absent
+    CachedValue defaultValue;
+    std::shared_ptr<Expression> checkExpr;
 };
-
-// ---------------------------------------------------------------------------
-// Statements
-// ---------------------------------------------------------------------------
 
 class CreateStatement : public ASTNode {
 public:
     std::string table;
     std::vector<ColumnDefinition> columns;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
 
     void accept(ASTVisitor& visitor) override;
@@ -273,7 +220,6 @@ public:
     std::string table;
     std::string column;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
     int columnIndex = -1;
 
@@ -283,10 +229,9 @@ public:
 class InsertStatement : public ASTNode {
 public:
     std::string table;
-    std::vector<std::string> columns;                 // empty => all columns in order
-    std::vector<std::vector<ExpressionPtr>> rows;     // one inner vector per VALUES tuple
+    std::vector<std::string> columns;
+    std::vector<std::vector<ExpressionPtr>> rows;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
 
     void accept(ASTVisitor& visitor) override;
@@ -295,12 +240,11 @@ public:
 class SelectStatement : public ASTNode {
 public:
     bool selectStar = false;
-    bool distinct = false;                            // SELECT DISTINCT
-    std::vector<std::unique_ptr<ColumnRef>> columns;  // empty when selectStar
+    bool distinct = false;
+    std::vector<std::unique_ptr<ColumnRef>> columns;
     std::string table;
-    ExpressionPtr where;                              // null when no WHERE
+    ExpressionPtr where;
 
-    // ORDER BY key: a column and a direction.
     struct OrderKey {
         std::unique_ptr<ColumnRef> column;
         bool ascending = true;
@@ -310,23 +254,16 @@ public:
     bool hasLimit = false;
     long long limit = 0;
 
-    // Aggregate/group-by support. When `aggregates` is non-empty this is an
-    // aggregate query; `columns` then holds the grouping columns echoed in the
-    // output and `groupBy` the GROUP BY keys.
     std::vector<std::unique_ptr<FunctionExpr>> aggregates;
     std::vector<std::unique_ptr<ColumnRef>> groupBy;
     ExpressionPtr having;
 
-    // INNER JOIN support. When `joinTable` is non-empty the FROM clause is a
-    // two-table join. `joinType` selects inner / left-outer / cross; `joinOn`
-    // is the ON predicate (absent for a cross join).
     enum class JoinKind { Inner, Left, Cross };
     std::string joinTable;
     ExpressionPtr joinOn;
     int joinTableId = -1;
     JoinKind joinType = JoinKind::Inner;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
 
     void accept(ASTVisitor& visitor) override;
@@ -335,9 +272,8 @@ public:
 class DeleteStatement : public ASTNode {
 public:
     std::string table;
-    ExpressionPtr where;  // null when no WHERE
+    ExpressionPtr where;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
 
     void accept(ASTVisitor& visitor) override;
@@ -347,10 +283,9 @@ class UpdateStatement : public ASTNode {
 public:
     std::string table;
     std::vector<std::string> targetColumns;
-    std::vector<ExpressionPtr> values;  // parallel to targetColumns
-    ExpressionPtr where;                // null when no WHERE
+    std::vector<ExpressionPtr> values;
+    ExpressionPtr where;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
     std::vector<int> targetIndices;
 
@@ -359,10 +294,9 @@ public:
 
 class DropStatement : public ASTNode {
 public:
-    bool isIndex = false;  // false => DROP TABLE
+    bool isIndex = false;
     std::string name;
 
-    // Filled in by the semantic analyzer (tables only).
     int tableId = -1;
 
     void accept(ASTVisitor& visitor) override;
@@ -373,10 +307,9 @@ public:
     enum class Kind { AddColumn, DropColumn };
     Kind kind = Kind::AddColumn;
     std::string table;
-    ColumnDefinition column;   // for AddColumn
-    std::string dropColumn;    // for DropColumn
+    ColumnDefinition column;
+    std::string dropColumn;
 
-    // Filled in by the semantic analyzer.
     int tableId = -1;
 
     void accept(ASTVisitor& visitor) override;
@@ -390,12 +323,6 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
-// ---------------------------------------------------------------------------
-// Visitor
-// ---------------------------------------------------------------------------
-
-// Double-dispatch interface implemented by passes over the AST (semantic
-// analysis now; execution planning in later phases).
 class ASTVisitor {
 public:
     virtual ~ASTVisitor() = default;
@@ -424,4 +351,4 @@ public:
     virtual void visit(TransactionStatement& node) = 0;
 };
 
-}  // namespace db::parser
+}

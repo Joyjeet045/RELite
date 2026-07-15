@@ -19,16 +19,16 @@ namespace {
 void testBloom() {
     index::BloomFilter bloom(1000, 4);
     for (int i = 0; i < 500; ++i) bloom.addInt(i);
-    for (int i = 0; i < 500; ++i) assert(bloom.mightContainInt(i));  // no false negatives
+    for (int i = 0; i < 500; ++i) assert(bloom.mightContainInt(i));
     int falsePositives = 0;
     for (int i = 1000; i < 2000; ++i) {
         if (bloom.mightContainInt(i)) ++falsePositives;
     }
-    assert(falsePositives < 100);  // comfortably low rate
+    assert(falsePositives < 100);
 }
 
 void testBPlusTree() {
-    index::BPlusTree tree(/*order=*/4);  // small order to force many splits
+    index::BPlusTree tree(/*order=*/4);
     for (int i = 0; i < 1000; ++i) {
         tree.insert(vm::Value::makeInt(i), vm::RecordID{i / 100, i % 100});
     }
@@ -43,17 +43,14 @@ void testBPlusTree() {
     auto r = tree.range(vm::Value::makeInt(100), vm::Value::makeInt(200));
     assert(r.size() == 101);
 
-    // Duplicate keys map to multiple rids.
     tree.insert(vm::Value::makeInt(42), vm::RecordID{9, 9});
     assert(tree.lookup(vm::Value::makeInt(42)).size() == 2);
 
-    // Erase one rid for the duplicate, then the whole key.
     assert(tree.erase(vm::Value::makeInt(42), vm::RecordID{9, 9}));
     assert(tree.lookup(vm::Value::makeInt(42)).size() == 1);
     assert(tree.erase(vm::Value::makeInt(7), vm::RecordID{0, 7}));
     assert(tree.lookup(vm::Value::makeInt(7)).empty());
 
-    // Text keys ordered lexicographically.
     index::BPlusTree strTree;
     strTree.insert(vm::Value::makeText("banana"), vm::RecordID{0, 0});
     strTree.insert(vm::Value::makeText("apple"), vm::RecordID{0, 1});
@@ -82,24 +79,19 @@ void testIndexedQueries() {
         exec(se, "PUT INTO t VALUES (" + std::to_string(i) + ", 'n" +
                      std::to_string(i) + "');");
     }
-    // Build index after data exists (backfill path).
     exec(se, "BUILD INDEX t_id ON t (id);");
 
-    // Point lookup via index.
     auto q = exec(se, "FETCH name FROM t WHEN id = 25;");
     assert(q.rows.size() == 1 && q.rows[0][0].textValue == "n25");
 
-    // Insert after index exists (maintenance path).
     exec(se, "PUT INTO t VALUES (100, 'hundred');");
     auto q2 = exec(se, "FETCH name FROM t WHEN id = 100;");
     assert(q2.rows.size() == 1 && q2.rows[0][0].textValue == "hundred");
 
-    // Delete maintains index.
     exec(se, "REMOVE FROM t WHEN id = 25;");
     auto q3 = exec(se, "FETCH name FROM t WHEN id = 25;");
     assert(q3.rows.empty());
 
-    // Absent key.
     auto q4 = exec(se, "FETCH name FROM t WHEN id = 9999;");
     assert(q4.rows.empty());
 
@@ -107,7 +99,7 @@ void testIndexedQueries() {
     std::remove(path.c_str());
 }
 
-}  // namespace
+}
 
 int main() {
     testBloom();

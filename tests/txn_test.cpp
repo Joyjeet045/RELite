@@ -18,20 +18,19 @@ void testLockManager() {
     vm::RecordID rid{0, 0};
 
     assert(lm.tryLock(1, rid, LockMode::Shared));
-    assert(lm.tryLock(2, rid, LockMode::Shared));   // shared is compatible
-    assert(!lm.tryLock(3, rid, LockMode::Exclusive));  // blocked by shared holders
+    assert(lm.tryLock(2, rid, LockMode::Shared));
+    assert(!lm.tryLock(3, rid, LockMode::Exclusive));
 
     lm.unlock(1, rid);
     lm.unlock(2, rid);
-    assert(lm.tryLock(3, rid, LockMode::Exclusive));  // now exclusive granted
-    assert(!lm.tryLock(4, rid, LockMode::Shared));    // blocked by exclusive
+    assert(lm.tryLock(3, rid, LockMode::Exclusive));
+    assert(!lm.tryLock(4, rid, LockMode::Shared));
     lm.unlockAll(3);
 
-    // Upgrade: sole shared holder promotes to exclusive.
     assert(lm.tryLock(5, rid, LockMode::Shared));
     assert(lm.tryLock(5, rid, LockMode::Exclusive));
     lm.unlockAll(5);
-    assert(lm.tryLock(6, rid, LockMode::Exclusive));  // fully released
+    assert(lm.tryLock(6, rid, LockMode::Exclusive));
     lm.unlockAll(6);
 }
 
@@ -60,10 +59,10 @@ void testWalRoundTrip() {
         txn::LogRecord begin2;
         begin2.txnId = 2;
         begin2.type = txn::LogType::Begin;
-        wal.append(begin2);  // txn 2 never commits
+        wal.append(begin2);
     }
 
-    txn::WriteAheadLog wal(path);  // reopen: records persist
+    txn::WriteAheadLog wal(path);
     auto records = wal.readAll();
     assert(records.size() == 4);
     assert(records[1].afterImage == "row-bytes");
@@ -86,13 +85,13 @@ void testTransactionUndo() {
     tm.registerUndo(t, [&] { trace.push_back(3); });
     tm.rollback(t);
     assert(!tm.isActive(t));
-    assert((trace == std::vector<int>{3, 2, 1}));  // reverse order
+    assert((trace == std::vector<int>{3, 2, 1}));
 
     int t2 = tm.begin();
     bool ran = false;
     tm.registerUndo(t2, [&] { ran = true; });
     tm.commit(t2);
-    assert(!ran);  // commit discards undo
+    assert(!ran);
     assert(!tm.isActive(t2));
 }
 
@@ -113,7 +112,7 @@ void testTransactionWithWal() {
     std::remove(path.c_str());
 }
 
-}  // namespace
+}
 
 int main() {
     testLockManager();

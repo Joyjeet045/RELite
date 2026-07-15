@@ -8,26 +8,17 @@
 
 namespace db::semantic {
 
-// Raised when a statement parses cleanly but is semantically invalid: unknown
-// table/column, type mismatch, arity mismatch, duplicate names, etc.
 class SemanticError : public std::runtime_error {
 public:
     explicit SemanticError(const std::string& message);
 };
 
-// Walks a parsed statement, validates it against the Catalog, and binds the
-// resolved table ids / column indices / expression types back into the AST.
-// CREATE statements additionally mutate the catalog (registering the new
-// table or index).
 class SemanticAnalyzer : public parser::ASTVisitor {
 public:
     explicit SemanticAnalyzer(Catalog& catalog);
 
-    // Analyzes `node` in place. Throws SemanticError on any violation.
     void analyze(parser::ASTNode& node);
 
-    // Binds and validates a standalone boolean expression against `tableName`
-    // (used to re-bind a persisted CHECK constraint after loading).
     void bindExpression(parser::Expression& expr, const std::string& tableName);
 
     void visit(parser::LiteralExpr& node) override;
@@ -54,16 +45,14 @@ public:
 
 private:
     Catalog& catalog_;
-    const TableSchema* currentTable_ = nullptr;  // table in scope for column binding
+    const TableSchema* currentTable_ = nullptr;
 
-    // Two-table scope for JOIN column resolution.
     const TableSchema* leftTable_ = nullptr;
     const TableSchema* rightTable_ = nullptr;
     int leftColumnCount_ = 0;
     bool joinMode_ = false;
 
-    // Analyzes `expr` and requires it to be a boolean predicate.
     void checkPredicate(parser::Expression& expr);
 };
 
-}  // namespace db::semantic
+}

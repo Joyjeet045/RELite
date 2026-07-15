@@ -8,17 +8,8 @@
 
 namespace db::vm {
 
-// Column types of a table, in order. Drives (de)serialization.
 using Schema = std::vector<parser::DataType>;
 
-// A row: an ordered list of Values, byte-packable against a Schema.
-//
-// On-disk layout:
-//   [ null bitmap : ceil(n/8) bytes ]
-//   for each non-null column, in order:
-//     INT           -> 8 bytes (host order)
-//     BOOL          -> 1 byte
-//     TEXT/VARCHAR  -> 4-byte length + raw bytes
 class Tuple {
 public:
     Tuple() = default;
@@ -36,4 +27,4 @@ private:
     std::vector<Value> values_;
 };
 
-}  // namespace db::vm
+}

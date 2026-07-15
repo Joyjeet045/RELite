@@ -8,7 +8,7 @@ namespace db::txn {
 bool LockManager::canGrant(const Entry& entry, int txnId, LockMode mode) const {
     for (const auto& [holder, held] : entry.holders) {
         if (holder == txnId) {
-            continue;  // this txn's own lock never blocks it
+            continue;
         }
         if (mode == LockMode::Exclusive || held == LockMode::Exclusive) {
             return false;
@@ -24,7 +24,7 @@ void LockManager::grant(const vm::RecordID& rid, int txnId, LockMode mode) {
         entry.holders.emplace(txnId, mode);
         heldByTxn_[txnId].push_back(rid);
     } else if (mode == LockMode::Exclusive) {
-        it->second = LockMode::Exclusive;  // upgrade
+        it->second = LockMode::Exclusive;
     }
 }
 
@@ -40,13 +40,11 @@ bool LockManager::tryLock(int txnId, const vm::RecordID& rid, LockMode mode) {
 
 bool LockManager::lock(int txnId, const vm::RecordID& rid, LockMode mode) {
     std::unique_lock<std::mutex> lock(mtx_);
-    // Bounded wait so an undetected deadlock surfaces as a failure instead of
-    // hanging forever (there is no deadlock detector).
     bool granted = cv_.wait_for(lock, std::chrono::seconds(5), [&] {
         return canGrant(table_[rid], txnId, mode);
     });
     if (!granted) {
-        return false;  // timed out: treat as a probable deadlock
+        return false;
     }
     grant(rid, txnId, mode);
     return true;
@@ -84,4 +82,4 @@ void LockManager::unlockAll(int txnId) {
     cv_.notify_all();
 }
 
-}  // namespace db::txn
+}

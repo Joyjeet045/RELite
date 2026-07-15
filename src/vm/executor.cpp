@@ -4,10 +4,6 @@
 
 namespace db::vm {
 
-// ---------------------------------------------------------------------------
-// SeqScanExecutor
-// ---------------------------------------------------------------------------
-
 SeqScanExecutor::SeqScanExecutor(TableManager* tables, int tableId, Schema schema)
     : tables_(tables), tableId_(tableId), schema_(std::move(schema)) {}
 
@@ -24,10 +20,6 @@ bool SeqScanExecutor::next(Tuple& outTuple, RecordID& outRid) {
     it_->next();
     return true;
 }
-
-// ---------------------------------------------------------------------------
-// FilterExecutor
-// ---------------------------------------------------------------------------
 
 FilterExecutor::FilterExecutor(std::unique_ptr<AbstractExecutor> child,
                                const parser::Expression* predicate)
@@ -47,10 +39,6 @@ bool FilterExecutor::next(Tuple& outTuple, RecordID& outRid) {
     }
     return false;
 }
-
-// ---------------------------------------------------------------------------
-// ProjectionExecutor
-// ---------------------------------------------------------------------------
 
 ProjectionExecutor::ProjectionExecutor(std::unique_ptr<AbstractExecutor> child,
                                        std::vector<int> columnIndices)
@@ -78,4 +66,4 @@ bool ProjectionExecutor::next(Tuple& outTuple, RecordID& outRid) {
     return true;
 }
 
-}  // namespace db::vm
+}

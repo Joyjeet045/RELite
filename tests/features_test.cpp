@@ -116,7 +116,7 @@ void run() {
     std::cout << "All feature tests passed.\n";
 }
 
-}  // namespace
+}
 
 int main() {
     run();

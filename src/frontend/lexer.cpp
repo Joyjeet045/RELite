@@ -8,10 +8,6 @@ namespace db::parser {
 
 namespace {
 
-// Case-insensitive keyword lookup table (keys are uppercased identifiers).
-// PRQLite uses its own keyword vocabulary instead of SQL's; the internal
-// TokenType names still read like SQL for familiarity, but the accepted source
-// keywords are the PRQLite words below. See docs/grammar.txt for the mapping.
 const std::unordered_map<std::string, TokenType>& keywordTable() {
     static const std::unordered_map<std::string, TokenType> table = {
         {"FETCH", TokenType::SELECT},    {"FROM", TokenType::FROM},
@@ -66,7 +62,7 @@ bool isDigit(char c) {
     return std::isdigit(static_cast<unsigned char>(c)) != 0;
 }
 
-}  // namespace
+}
 
 Lexer::Lexer(std::string source) : source_(std::move(source)) {}
 
@@ -99,7 +95,6 @@ void Lexer::skipWhitespaceAndComments() {
         if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
             advance();
         } else if (c == '-' && peekNext() == '-') {
-            // SQL line comment: consume until end of line.
             while (!isAtEnd() && peek() != '\n') {
                 advance();
             }
@@ -140,7 +135,7 @@ Token Lexer::scanToken() {
         return scanString();
     }
 
-    advance();  // consume the punctuation / operator character
+    advance();
     switch (c) {
         case '(': return makeToken(TokenType::LPAREN, "(", startColumn);
         case ')': return makeToken(TokenType::RPAREN, ")", startColumn);
@@ -206,22 +201,20 @@ Token Lexer::scanNumber() {
 
 Token Lexer::scanString() {
     int startColumn = column_;
-    advance();  // consume opening quote
+    advance();
     std::string value;
     for (;;) {
         if (isAtEnd()) {
-            // Unterminated string literal.
             return makeToken(TokenType::UNKNOWN, value, startColumn);
         }
         char c = advance();
         if (c == '\'') {
-            // Two consecutive quotes inside a string encode a literal quote.
             if (peek() == '\'') {
                 advance();
                 value.push_back('\'');
                 continue;
             }
-            break;  // closing quote
+            break;
         }
         value.push_back(c);
     }
@@ -312,4 +305,4 @@ std::string_view tokenTypeName(TokenType type) {
     return "UNKNOWN";
 }
 
-}  // namespace db::parser
+}

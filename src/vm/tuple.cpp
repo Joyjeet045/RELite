@@ -50,7 +50,7 @@ double readF64(const std::string& in, std::size_t& pos) {
     return v;
 }
 
-}  // namespace
+}
 
 std::string Tuple::serialize(const Schema& schema) const {
     const std::size_t n = schema.size();
@@ -75,8 +75,6 @@ std::string Tuple::serialize(const Schema& schema) const {
                 appendI64(out, v.intValue);
                 break;
             case parser::DataType::Float:
-                // A numeric value bound to a float column is stored as a double,
-                // coercing an integer source value when necessary.
                 appendF64(out, v.type == ValueType::Double
                                    ? v.doubleValue
                                    : static_cast<double>(v.intValue));
@@ -137,4 +135,4 @@ Tuple Tuple::deserialize(const std::string& bytes, const Schema& schema) {
     return Tuple(std::move(values));
 }
 
-}  // namespace db::vm
+}

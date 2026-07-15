@@ -12,13 +12,6 @@ namespace db::txn {
 
 enum class LockMode { Shared, Exclusive };
 
-// Row-level lock table for two-phase locking. Multiple transactions may hold a
-// Shared lock on a row; an Exclusive lock is exclusive. A transaction holding a
-// Shared lock may upgrade to Exclusive once it is the sole holder. lock()
-// blocks until the request is grantable; tryLock() never blocks.
-//
-// Deadlock detection is out of scope (a documented simplification); callers are
-// expected to acquire in a consistent order or rely on the single-writer REPL.
 class LockManager {
 public:
     bool lock(int txnId, const vm::RecordID& rid, LockMode mode);
@@ -28,7 +21,7 @@ public:
 
 private:
     struct Entry {
-        std::map<int, LockMode> holders;  // txnId -> granted mode
+        std::map<int, LockMode> holders;
     };
 
     bool canGrant(const Entry& entry, int txnId, LockMode mode) const;
@@ -40,4 +33,4 @@ private:
     std::unordered_map<int, std::vector<vm::RecordID>> heldByTxn_;
 };
 
-}  // namespace db::txn
+}

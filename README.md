@@ -1,5 +1,7 @@
 # PRQLite
 
+[![CI](https://github.com/Joyjeet045/PRQLite/actions/workflows/ci.yml/badge.svg)](https://github.com/Joyjeet045/PRQLite/actions/workflows/ci.yml)
+
 A relational database built from scratch in modern C++ (C++20). PRQLite implements the
 full stack of a small single-node RDBMS: a front-end for its **own query language**
 (PRQLite QL, not SQL), a Volcano-model execution engine, a paged storage engine with a

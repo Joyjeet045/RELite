@@ -24,6 +24,7 @@ add_library(relite_core
     src/vm/tuple.cpp
     src/vm/table_manager.cpp
     src/vm/version_store.cpp
+    src/vm/vectorized.cpp
     src/vm/expression_eval.cpp
     src/vm/executor.cpp
     src/vm/executor_engine.cpp
@@ -100,3 +101,7 @@ add_test(NAME phase6_test COMMAND phase6_test)
 add_executable(features_test tests/features_test.cpp)
 target_link_libraries(features_test PRIVATE relite_core)
 add_test(NAME features_test COMMAND features_test)
+
+add_executable(vectorized_test tests/vectorized_test.cpp)
+target_link_libraries(vectorized_test PRIVATE relite_core)
+add_test(NAME vectorized_test COMMAND vectorized_test)

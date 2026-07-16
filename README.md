@@ -46,6 +46,9 @@ The full keyword vocabulary and SQL-to-Relite mapping are in
 - Hand-written lexer + recursive-descent parser (precedence climbing) → AST (visitor pattern)
 - Semantic analyzer binding names/types against a per-database catalog
 - Volcano/iterator execution engine with a first-pass optimizer (index range scans) and hash join
+- Push-based, batch-at-a-time vectorized path (columnar batches + selection
+  vectors) for ungrouped aggregates, alongside the Volcano engine; `EXPLAIN`
+  marks it as `Aggregate (Vectorized)`
 - 4 KB slotted pages, disk manager, LRU buffer pool with page guards, page compaction
 - Thread-safe B+ tree + Bloom filter indexes
 - Write-ahead log with `fsync` durability, group-commit, checkpointing, and crash recovery
@@ -77,7 +80,7 @@ Type `\h` for help and `\q` to quit.
 
 ## Tests
 
-Eleven self-contained suites run via CTest:
+Twelve self-contained suites run via CTest:
 
 ```sh
 ctest --test-dir build --output-on-failure
@@ -125,9 +128,10 @@ laptop; 50K-row table):
 | Durable commit (`fsync` per txn)  | ~1K commits/s   | ~0.9 ms/commit |
 
 Insert/lookup figures are end-to-end (they include SQL parsing and planning on
-every statement, plus multiversion bookkeeping for time travel); commit
-throughput is bounded by `fsync`. Throughput is sensitive to background load and
-dataset size — run the harness locally for your own baseline.
+every statement, plus multiversion bookkeeping for time travel); the
+scan + aggregate row uses the vectorized path, and commit throughput is bounded
+by `fsync`. Throughput is sensitive to background load and dataset size — run the
+harness locally for your own baseline.
 
 ## Roadmap
 

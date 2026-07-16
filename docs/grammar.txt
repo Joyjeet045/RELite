@@ -237,7 +237,10 @@ Notes / intentional limitations
     associative); all but UNION ALL remove duplicate rows.
   * Aggregates (COUNT/SUM/AVG/MIN/MAX) appear in a FETCH list or in HAVING;
     other ident "(" ... ")" calls are scalar functions valid anywhere in an
-    expression. CASE and CAST are expression forms.
+    expression. CASE and CAST are expression forms. An ungrouped aggregate over
+    a single table (optionally with a WHEN that is an AND of column-vs-literal
+    comparisons) runs through a push-based vectorized path; EXPLAIN labels it
+    "Aggregate (Vectorized)".
   * A view (BUILD VIEW) stores its query and is materialized when referenced in
     a FROM; a multi-column BUILD INDEX is used for equality on all its columns.
   * Window functions attach OVER (...) to a select item. The ranking functions

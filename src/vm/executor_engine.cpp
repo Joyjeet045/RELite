@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,7 @@
 
 #include "vm/executor.hpp"
 #include "vm/expression_eval.hpp"
+#include "vm/vectorized.hpp"
 
 namespace db::vm {
 
@@ -1275,7 +1277,9 @@ void ExecutorEngine::explainSelect(parser::SelectStatement& node) {
     if (node.distinct) { emit("Unique"); ++depth; }
     if (!node.orderBy.empty()) { emit("Sort"); ++depth; }
     if (!node.aggregates.empty() || !node.groupBy.empty()) {
-        emit(node.groupBy.empty() ? "Aggregate" : "GroupAggregate");
+        std::string label = node.groupBy.empty() ? "Aggregate" : "GroupAggregate";
+        if (isVectorizableAggregate(node)) label += " (Vectorized)";
+        emit(label);
         ++depth;
     }
 
@@ -1315,6 +1319,122 @@ void ExecutorEngine::explainSelect(parser::SelectStatement& node) {
     for (const auto& line : lines) {
         result_.rows.push_back(std::vector<Value>{Value::makeText(line)});
     }
+}
+
+namespace {
+
+bool buildVecPredicate(const parser::Expression* e, VecPredicate& out) {
+    using namespace parser;
+    if (auto* log = dynamic_cast<const LogicalExpr*>(e)) {
+        if (log->op != LogicalOp::And) return false;
+        return buildVecPredicate(log->left.get(), out) &&
+               buildVecPredicate(log->right.get(), out);
+    }
+    if (auto* bin = dynamic_cast<const BinaryExpr*>(e)) {
+        const ColumnRef* col = dynamic_cast<const ColumnRef*>(bin->left.get());
+        const LiteralExpr* lit = dynamic_cast<const LiteralExpr*>(bin->right.get());
+        ComparisonOp op = bin->op;
+        if (col == nullptr || lit == nullptr) {
+            col = dynamic_cast<const ColumnRef*>(bin->right.get());
+            lit = dynamic_cast<const LiteralExpr*>(bin->left.get());
+            op = flipOp(op);
+        }
+        if (col == nullptr || lit == nullptr) return false;
+        if (col->outerRef || col->computed || col->columnIndex < 0) return false;
+        VecPredicate::Term term;
+        term.column = col->columnIndex;
+        term.op = op;
+        term.literal = evalExpression(*lit, Tuple{});
+        out.terms.push_back(std::move(term));
+        return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+bool ExecutorEngine::isVectorizableAggregate(
+    const parser::SelectStatement& node) const {
+    if (node.aggregates.empty()) return false;
+    if (!node.groupBy.empty() || node.having) return false;
+    if (!node.columns.empty()) return false;
+    if (node.distinct || node.asOf) return false;
+    if (txnActive()) return false;
+
+    const semantic::TableSchema* ts = catalog_.getTableById(node.tableId);
+    if (ts != nullptr && ts->isView) return false;
+
+    for (const auto& fn : node.aggregates) {
+        if (fn->distinct) return false;
+        if (fn->name == "COUNT" && fn->star) continue;
+        if (!fn->argument || fn->argument->columnIndex < 0) return false;
+        if (fn->name != "COUNT" && fn->name != "SUM" && fn->name != "AVG" &&
+            fn->name != "MIN" && fn->name != "MAX") {
+            return false;
+        }
+    }
+    if (node.where) {
+        if (hasCorrelatedSubquery(node.where.get())) return false;
+        VecPredicate pred;
+        if (!buildVecPredicate(node.where.get(), pred)) return false;
+    }
+    return true;
+}
+
+bool ExecutorEngine::tryVectorizedAggregate(parser::SelectStatement& node,
+                                            const Schema& schema) {
+    if (!isVectorizableAggregate(node)) return false;
+
+    std::vector<VecAggregate> aggs;
+    for (const auto& fn : node.aggregates) {
+        VecAggregate va;
+        if (fn->name == "COUNT" && fn->star) {
+            va.kind = VecAggregate::Kind::CountStar;
+        } else {
+            va.column = fn->argument->columnIndex;
+            if (fn->name == "COUNT") {
+                va.kind = VecAggregate::Kind::Count;
+            } else if (fn->name == "SUM") {
+                va.kind = VecAggregate::Kind::Sum;
+            } else if (fn->name == "AVG") {
+                va.kind = VecAggregate::Kind::Avg;
+            } else if (fn->name == "MIN") {
+                va.kind = VecAggregate::Kind::Min;
+            } else {
+                va.kind = VecAggregate::Kind::Max;
+            }
+        }
+        aggs.push_back(va);
+    }
+
+    std::optional<VecPredicate> predicate;
+    if (node.where) {
+        VecPredicate pred;
+        buildVecPredicate(node.where.get(), pred);
+        predicate = std::move(pred);
+    }
+
+    std::vector<Value> row =
+        runVectorizedAggregate(storage_, node.tableId, schema, predicate, aggs);
+
+    for (const auto& fn : node.aggregates) {
+        result_.columns.push_back(fn->alias.empty() ? aggLabel(*fn) : fn->alias);
+    }
+    result_.rows.push_back(std::move(row));
+
+    if (node.offset > 0) {
+        std::size_t off = static_cast<std::size_t>(node.offset);
+        if (off >= result_.rows.size()) {
+            result_.rows.clear();
+        } else {
+            result_.rows.erase(result_.rows.begin(), result_.rows.begin() + off);
+        }
+    }
+    if (node.hasLimit && node.limit >= 0 &&
+        static_cast<std::size_t>(node.limit) < result_.rows.size()) {
+        result_.rows.resize(static_cast<std::size_t>(node.limit));
+    }
+    return true;
 }
 
 void ExecutorEngine::visit(parser::SelectStatement& node) {
@@ -1501,6 +1621,7 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         loadSchema(node.tableId, schema, names);
 
         if (!node.aggregates.empty() || !node.groupBy.empty() || node.having) {
+            if (tryVectorizedAggregate(node, schema)) return;
             std::vector<std::pair<RecordID, std::vector<Value>>> arows;
             if (node.where && hasCorrelatedSubquery(node.where.get())) {
                 auto allRows = sourceRows(node, schema, nullptr);

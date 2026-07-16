@@ -419,7 +419,8 @@ void DB::run() {
             }
             if (trimmed == "\\h") {
                 std::cout << "Relite language (not SQL):\n"
-                             "  BUILD RELATION / BUILD INDEX, DISCARD RELATION / DISCARD INDEX\n"
+                             "  BUILD RELATION / BUILD INDEX (multi-col) / BUILD VIEW,\n"
+                             "    DISCARD RELATION / DISCARD INDEX\n"
                              "  PUT INTO (VALUES or FETCH), MODIFY, REMOVE, RESHAPE RELATION\n"
                              "  FETCH: projections with AS aliases and arithmetic (+ - * /),\n"
                              "    WHEN (=,!=,<,<=,>,>=, AND/OR/NOT, IS [NOT] NULL,\n"
@@ -429,7 +430,8 @@ void DB::run() {
                              "  Functions: UPPER/LOWER/LENGTH/SUBSTR/TRIM, ABS/ROUND/MOD/CEIL/FLOOR,\n"
                              "    COALESCE/NULLIF, CAST(x AS type), CASE WHEN..THEN..ELSE..END.\n"
                              "  Set ops: UNION [ALL], INTERSECT, EXCEPT.  EXPLAIN FETCH ...\n"
-                             "  Types: INT/BIGINT, FLOAT, BOOL, TEXT, VARCHAR(n); AUTO_INCREMENT.\n"
+                             "  Types: INT/BIGINT, FLOAT, DECIMAL, BOOL, TEXT, VARCHAR(n),\n"
+                             "    DATE, TIMESTAMP; AUTO_INCREMENT; FK ON REMOVE CASCADE/SET NULL.\n"
                              "  Transactions: START, SAVE, UNDO.\n"
                              "  \\q  quit\n"
                              "  \\h  help\n";

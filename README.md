@@ -13,23 +13,25 @@ It runs as an interactive REPL and persists data across restarts.
 ## Features
 
 **Query language (Relite QL, not SQL)**
-- Definitions: `BUILD RELATION` / `BUILD INDEX`, `DISCARD RELATION` / `DISCARD INDEX`,
-  `RESHAPE RELATION ADD/DISCARD COLUMN`
+- Definitions: `BUILD RELATION` / `BUILD INDEX` (single- or multi-column) / `BUILD VIEW`,
+  `DISCARD RELATION` / `DISCARD INDEX`, `RESHAPE RELATION ADD/DISCARD COLUMN`
 - Data changes: `PUT INTO` (including `PUT INTO t FETCH ...`), `MODIFY`, `REMOVE`
 - Queries: `FETCH` with projection (arithmetic such as `price * qty`, column/table
   aliases via `AS`), `WHEN` (`=, !=, <, <=, >, >=`, `+ - * /`, `AND/OR/NOT`,
   `IS [NOT] NULL`, `[NOT] IN`, `BETWEEN`, `LIKE`), inner/`LEFT`/`RIGHT`/`FULL`/`CROSS`
-  `LINK` joins, `GROUP BY`/`HAVING`, aggregates (`COUNT/SUM/AVG/MIN/MAX`), `UNIQUEONLY`,
-  `SORT BY`, `TAKE ... SKIP` (limit/offset), and uncorrelated scalar/`IN`/`EXISTS`
-  subqueries (also usable in `MODIFY`/`REMOVE`)
+  `LINK` joins, `GROUP BY`/`HAVING` (including aggregates in `HAVING`), aggregates
+  (`COUNT/SUM/AVG/MIN/MAX`), `UNIQUEONLY`, `SORT BY`, `TAKE ... SKIP` (limit/offset),
+  and uncorrelated scalar/`IN`/`EXISTS` subqueries (also usable in `MODIFY`/`REMOVE`)
 - Scalar functions & expressions: `UPPER/LOWER/LENGTH/SUBSTR/TRIM`, `ABS/ROUND/MOD/CEIL/FLOOR`,
   `COALESCE/NULLIF`, `CAST(x AS type)`, and `CASE WHEN ... THEN ... ELSE ... END`
 - Set operations: `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT`
 - `EXPLAIN FETCH ...` prints the query plan tree (scan/index, join algorithm, sort, limit)
-- Column types: `INT` (aka `BIGINT`/`SMALLINT`), `FLOAT` (aka `DOUBLE`/`REAL`), `BOOL`,
-  `TEXT`, `VARCHAR(n)`
+- Column types: `INT` (aka `BIGINT`/`SMALLINT`), `FLOAT` (aka `DOUBLE`/`REAL`),
+  `DECIMAL(p,s)`/`NUMERIC`, `BOOL`, `TEXT`, `VARCHAR(n)`, `DATE`, `TIMESTAMP`
 - Constraints: `PRIMARY KEY`, `UNIQUE`, `NOT NULL`, `DEFAULT`, `CHECK`, `AUTO_INCREMENT`,
-  foreign keys (`REFERENCES`), and `VARCHAR(n)` length enforcement
+  foreign keys (`REFERENCES ... ON REMOVE CASCADE / SET NULL / RESTRICT`), and
+  `VARCHAR(n)` length enforcement
+- Views: `BUILD VIEW v AS FETCH ...` (materialized on read)
 - Transactions: `START` / `SAVE` / `UNDO`
 
 The full keyword vocabulary and SQL-to-Relite mapping are in

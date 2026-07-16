@@ -21,6 +21,7 @@ accepted as source.
   ---------------------   ---------------------
   CREATE TABLE            BUILD RELATION
   CREATE INDEX            BUILD INDEX
+  CREATE VIEW             BUILD VIEW
   DROP TABLE              DISCARD RELATION
   DROP INDEX              DISCARD INDEX
   ALTER TABLE             RESHAPE RELATION
@@ -89,7 +90,8 @@ Terminals (lexical)
             HAVING TAKE SKIP AS ASC DESC LINK LEFT RIGHT FULL CROSS IS IN BETWEEN
             LIKE EXISTS EXPLAIN UNION INTERSECT EXCEPT ALL CASE THEN ELSE END
             START SAVE UNDO AND OR NOT INT INTEGER BIGINT SMALLINT FLOAT DOUBLE
-            REAL BOOL BOOLEAN TEXT VARCHAR TRUE FALSE NULL
+            REAL DECIMAL NUMERIC DATE TIMESTAMP DATETIME BOOL BOOLEAN TEXT VARCHAR
+            VIEW TRUE FALSE NULL
 
 
 ================================================================================
@@ -106,7 +108,8 @@ Statements
                  | txnStmt ) [ ";" ] ;
 
   buildStmt   := "BUILD" "RELATION" ident "(" columnDef { "," columnDef } ")"
-               | "BUILD" "INDEX" ident "ON" ident "(" ident ")" ;
+               | "BUILD" "INDEX" ident "ON" ident "(" ident { "," ident } ")"
+               | "BUILD" "VIEW" ident "AS" fetchStmt ;
 
   putStmt     := "PUT" "INTO" ident [ "(" ident { "," ident } ")" ]
                  ( "VALUES" valueRow { "," valueRow } | fetchStmt ) ;
@@ -155,9 +158,12 @@ Column definitions and constraints
 
   columnDef   := ident dataType { constraint } ;
 
-  dataType    := "INT" | "FLOAT" | "BOOL" | "TEXT"
+  dataType    := "INT" | "FLOAT" | "BOOL" | "TEXT" | "DATE" | "TIMESTAMP"
+               | "DECIMAL" [ "(" integer [ "," integer ] ")" ]
                | "VARCHAR" [ "(" integer ")" ] ;    ; INT accepts BIGINT/SMALLINT;
-                                                    ; FLOAT accepts DOUBLE/REAL
+                                                    ; FLOAT accepts DOUBLE/REAL;
+                                                    ; DECIMAL accepts NUMERIC;
+                                                    ; DATE/TIMESTAMP are ISO text
 
   constraint  := "PRIMARY" "KEY"                        ; implies NOT NULL + UNIQUE
                | "UNIQUE"
@@ -165,6 +171,7 @@ Column definitions and constraints
                | "AUTO_INCREMENT"                       ; INT only; also SERIAL
                | "DEFAULT" literal
                | "REFERENCES" ident "(" ident ")"       ; inline foreign key
+                 [ "ON" "REMOVE" ( "CASCADE" | "SET" "NULL" | "RESTRICT" ) ]
                | "CHECK" "(" expression ")" ;
 
 
@@ -222,9 +229,11 @@ Notes / intentional limitations
     self-joins).
   * UNION / UNION ALL / INTERSECT / EXCEPT combine two FETCH cores (left
     associative); all but UNION ALL remove duplicate rows.
-  * Aggregates (COUNT/SUM/AVG/MIN/MAX) appear only in a FETCH list; other
-    ident "(" ... ")" calls are scalar functions valid anywhere in an
+  * Aggregates (COUNT/SUM/AVG/MIN/MAX) appear in a FETCH list or in HAVING;
+    other ident "(" ... ")" calls are scalar functions valid anywhere in an
     expression. CASE and CAST are expression forms.
+  * A view (BUILD VIEW) stores its query and is materialized when referenced in
+    a FROM; a multi-column BUILD INDEX is used for equality on all its columns.
   * Subqueries are uncorrelated and appear as IN (FETCH ...), EXISTS (FETCH ...),
     or a parenthesized scalar (FETCH ...), including inside MODIFY/REMOVE.
   * A few constructs need two-token lookahead (peekAt(1)):

@@ -12,7 +12,8 @@ using parser::LiteralExpr;
 namespace {
 
 bool isStringType(DataType type) {
-    return type == DataType::Text || type == DataType::Varchar;
+    return type == DataType::Text || type == DataType::Varchar ||
+           type == DataType::Date || type == DataType::Timestamp;
 }
 
 bool isNumericType(DataType type) {

@@ -81,6 +81,8 @@ enum class TokenType {
     TEXT_TYPE,
     VARCHAR,
     FLOAT_TYPE,
+    DATE_TYPE,
+    TIMESTAMP_TYPE,
 
     TRUE,
     FALSE,

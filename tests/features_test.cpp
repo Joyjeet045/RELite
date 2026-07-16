@@ -219,6 +219,14 @@ void run() {
     auto nn = h.run("FETCH p FROM nt WHEN id = 20;");
     assert(nn.rows.size() == 1 && nn.rows[0][0].isNull());
 
+    /* DATE/TIMESTAMP compare as ISO text; DECIMAL is numeric. */
+    h.run("BUILD RELATION ev (id INT, d DATE, amt DECIMAL(10,2));");
+    h.run("PUT INTO ev VALUES (1,'2024-03-01',19.99),(2,'2023-12-25',5.5);");
+    auto dt = h.run("FETCH id FROM ev WHEN d > '2024-01-01' SORT BY d;");
+    assert(dt.rows.size() == 1 && dt.rows[0][0].intValue == 1);
+    assert(near(h.run("FETCH amt * 2 AS x FROM ev WHEN id = 1;").rows[0][0].doubleValue,
+                39.98));
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

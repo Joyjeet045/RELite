@@ -23,6 +23,10 @@ const std::unordered_map<std::string, TokenType>& keywordTable() {
         {"TEXT", TokenType::TEXT_TYPE},  {"VARCHAR", TokenType::VARCHAR},
         {"FLOAT", TokenType::FLOAT_TYPE}, {"DOUBLE", TokenType::FLOAT_TYPE},
         {"REAL", TokenType::FLOAT_TYPE},
+        {"DECIMAL", TokenType::FLOAT_TYPE}, {"NUMERIC", TokenType::FLOAT_TYPE},
+        {"DATE", TokenType::DATE_TYPE},
+        {"TIMESTAMP", TokenType::TIMESTAMP_TYPE},
+        {"DATETIME", TokenType::TIMESTAMP_TYPE},
         {"TRUE", TokenType::TRUE},       {"FALSE", TokenType::FALSE},
         {"MODIFY", TokenType::UPDATE},   {"SET", TokenType::SET},
         {"DISCARD", TokenType::DROP},    {"SORT", TokenType::ORDER},
@@ -304,6 +308,8 @@ std::string_view tokenTypeName(TokenType type) {
         case TokenType::TEXT_TYPE: return "TEXT_TYPE";
         case TokenType::VARCHAR: return "VARCHAR";
         case TokenType::FLOAT_TYPE: return "FLOAT_TYPE";
+        case TokenType::DATE_TYPE: return "DATE_TYPE";
+        case TokenType::TIMESTAMP_TYPE: return "TIMESTAMP_TYPE";
         case TokenType::TRUE: return "TRUE";
         case TokenType::FALSE: return "FALSE";
         case TokenType::IDENTIFIER: return "IDENTIFIER";

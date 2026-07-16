@@ -57,6 +57,8 @@ Value castValue(const Value& v, parser::DataType target) {
             return Value::null();
         case parser::DataType::Text:
         case parser::DataType::Varchar:
+        case parser::DataType::Date:
+        case parser::DataType::Timestamp:
             return Value::makeText(valueAsString(v));
     }
     return Value::null();

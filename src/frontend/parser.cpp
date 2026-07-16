@@ -234,7 +234,18 @@ ColumnDefinition Parser::parseColumnDefinition() {
         case TokenType::INT_TYPE: def.type = DataType::Int; break;
         case TokenType::BOOL_TYPE: def.type = DataType::Bool; break;
         case TokenType::TEXT_TYPE: def.type = DataType::Text; break;
-        case TokenType::FLOAT_TYPE: def.type = DataType::Float; break;
+        case TokenType::DATE_TYPE: def.type = DataType::Date; break;
+        case TokenType::TIMESTAMP_TYPE: def.type = DataType::Timestamp; break;
+        case TokenType::FLOAT_TYPE:
+            def.type = DataType::Float;
+            if (match(TokenType::LPAREN)) {
+                consume(TokenType::INTEGER_LITERAL, "DECIMAL precision");
+                if (match(TokenType::COMMA)) {
+                    consume(TokenType::INTEGER_LITERAL, "DECIMAL scale");
+                }
+                consume(TokenType::RPAREN, "')'");
+            }
+            break;
         case TokenType::VARCHAR:
             def.type = DataType::Varchar;
             if (match(TokenType::LPAREN)) {
@@ -244,7 +255,7 @@ ColumnDefinition Parser::parseColumnDefinition() {
             }
             break;
         default:
-            error(typeTok, "expected a column type (INT, BOOL, TEXT, VARCHAR)");
+            error(typeTok, "expected a column type (INT, FLOAT, BOOL, TEXT, VARCHAR, DATE, TIMESTAMP)");
     }
 
     for (;;) {
@@ -629,6 +640,8 @@ DataType Parser::parseCastType() {
         case TokenType::FLOAT_TYPE: advance(); return DataType::Float;
         case TokenType::BOOL_TYPE: advance(); return DataType::Bool;
         case TokenType::TEXT_TYPE: advance(); return DataType::Text;
+        case TokenType::DATE_TYPE: advance(); return DataType::Date;
+        case TokenType::TIMESTAMP_TYPE: advance(); return DataType::Timestamp;
         case TokenType::VARCHAR:
             advance();
             if (match(TokenType::LPAREN)) {

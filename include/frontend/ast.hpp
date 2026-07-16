@@ -19,6 +19,8 @@ enum class DataType {
     Text,
     Varchar,
     Float,
+    Date,
+    Timestamp,
 };
 
 std::string_view dataTypeName(DataType type);

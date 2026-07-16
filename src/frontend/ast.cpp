@@ -11,6 +11,8 @@ std::string_view dataTypeName(DataType type) {
         case DataType::Text: return "TEXT";
         case DataType::Varchar: return "VARCHAR";
         case DataType::Float: return "FLOAT";
+        case DataType::Date: return "DATE";
+        case DataType::Timestamp: return "TIMESTAMP";
     }
     return "UNKNOWN";
 }

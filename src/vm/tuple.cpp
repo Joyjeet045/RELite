@@ -84,6 +84,8 @@ std::string Tuple::serialize(const Schema& schema) const {
                 break;
             case parser::DataType::Text:
             case parser::DataType::Varchar:
+            case parser::DataType::Date:
+            case parser::DataType::Timestamp:
                 appendU32(out, static_cast<std::uint32_t>(v.textValue.size()));
                 out.append(v.textValue);
                 break;
@@ -123,7 +125,9 @@ Tuple Tuple::deserialize(const std::string& bytes, const Schema& schema) {
                 break;
             }
             case parser::DataType::Text:
-            case parser::DataType::Varchar: {
+            case parser::DataType::Varchar:
+            case parser::DataType::Date:
+            case parser::DataType::Timestamp: {
                 std::uint32_t len = readU32(bytes, pos);
                 if (pos + len > bytes.size()) throw std::runtime_error("tuple: truncated text");
                 values.push_back(Value::makeText(bytes.substr(pos, len)));

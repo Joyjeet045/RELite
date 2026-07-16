@@ -382,18 +382,7 @@ ASTNodePtr Parser::parseSelect() {
         do {
             if (check(TokenType::IDENTIFIER) && peekAt(1).type == TokenType::LPAREN &&
                 isAggregateName(peek().lexeme)) {
-                auto fn = std::make_unique<FunctionExpr>();
-                fn->name = upperName(advance().lexeme);
-                consume(TokenType::LPAREN, "'('");
-                if (match(TokenType::DISTINCT)) {
-                    fn->distinct = true;
-                }
-                if (match(TokenType::STAR)) {
-                    fn->star = true;
-                } else {
-                    fn->argument = parseColumnRef();
-                }
-                consume(TokenType::RPAREN, "')'");
+                auto fn = parseAggregate();
                 if (match(TokenType::AS)) {
                     fn->alias = consume(TokenType::IDENTIFIER, "alias").lexeme;
                 }
@@ -593,6 +582,22 @@ std::unique_ptr<ColumnRef> Parser::parseColumnRef() {
         ref->column = std::move(first);
     }
     return ref;
+}
+
+std::unique_ptr<FunctionExpr> Parser::parseAggregate() {
+    auto fn = std::make_unique<FunctionExpr>();
+    fn->name = upperName(advance().lexeme);
+    consume(TokenType::LPAREN, "'('");
+    if (match(TokenType::DISTINCT)) {
+        fn->distinct = true;
+    }
+    if (match(TokenType::STAR)) {
+        fn->star = true;
+    } else {
+        fn->argument = parseColumnRef();
+    }
+    consume(TokenType::RPAREN, "')'");
+    return fn;
 }
 
 std::string Parser::parseOptionalAlias() {
@@ -858,6 +863,9 @@ ExpressionPtr Parser::parsePrimary() {
         return parseCase();
     }
     if (check(TokenType::IDENTIFIER) && peekAt(1).type == TokenType::LPAREN) {
+        if (isAggregateName(peek().lexeme)) {
+            return parseAggregate();
+        }
         return parseCall();
     }
     if (match(TokenType::EXISTS)) {

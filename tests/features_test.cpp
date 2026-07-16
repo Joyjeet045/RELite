@@ -196,6 +196,17 @@ void run() {
     h.run("MODIFY seq SET v = 99 WHEN id IN (FETCH id FROM seq WHEN v = 10);");
     assert(h.run("FETCH v FROM seq WHEN id = 1;").rows[0][0].intValue == 99);
 
+    /* Aggregates are allowed in HAVING. */
+    h.run("BUILD RELATION emp (id INT, dept TEXT, sal INT);");
+    h.run("PUT INTO emp VALUES (1,'eng',100),(2,'eng',200),(3,'sa',150),(4,'sa',300),"
+          "(5,'sa',50);");
+    auto hv = h.run(
+        "FETCH dept FROM emp GROUP BY dept HAVING COUNT(*) > 2 SORT BY dept;");
+    assert(hv.rows.size() == 1 && hv.rows[0][0].textValue == "sa");
+    auto hv2 = h.run(
+        "FETCH dept FROM emp GROUP BY dept HAVING SUM(sal) > 300 SORT BY dept;");
+    assert(hv2.rows.size() == 1 && hv2.rows[0][0].textValue == "sa");
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

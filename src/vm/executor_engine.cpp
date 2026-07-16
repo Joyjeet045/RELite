@@ -98,6 +98,73 @@ Value computeAggregate(const parser::FunctionExpr& fn,
     return best;
 }
 
+using GroupRows = std::vector<const std::vector<Value>*>;
+
+Value evalHavingValue(const parser::Expression& e, const GroupRows& rows,
+                      const Tuple& rep) {
+    if (auto* fn = dynamic_cast<const parser::FunctionExpr*>(&e)) {
+        return computeAggregate(*fn, rows);
+    }
+    if (auto* ar = dynamic_cast<const parser::ArithmeticExpr*>(&e)) {
+        Value l = evalHavingValue(*ar->left, rows, rep);
+        Value r = evalHavingValue(*ar->right, rows, rep);
+        bool ln = l.type == ValueType::Int || l.type == ValueType::Double;
+        bool rn = r.type == ValueType::Int || r.type == ValueType::Double;
+        if (!ln || !rn) return Value::null();
+        if (l.type == ValueType::Double || r.type == ValueType::Double) {
+            double a = l.type == ValueType::Double ? l.doubleValue
+                                                   : static_cast<double>(l.intValue);
+            double b = r.type == ValueType::Double ? r.doubleValue
+                                                   : static_cast<double>(r.intValue);
+            switch (ar->op) {
+                case parser::ArithmeticOp::Add: return Value::makeDouble(a + b);
+                case parser::ArithmeticOp::Sub: return Value::makeDouble(a - b);
+                case parser::ArithmeticOp::Mul: return Value::makeDouble(a * b);
+                case parser::ArithmeticOp::Div:
+                    return b == 0.0 ? Value::null() : Value::makeDouble(a / b);
+            }
+        }
+        std::int64_t a = l.intValue;
+        std::int64_t b = r.intValue;
+        switch (ar->op) {
+            case parser::ArithmeticOp::Add: return Value::makeInt(a + b);
+            case parser::ArithmeticOp::Sub: return Value::makeInt(a - b);
+            case parser::ArithmeticOp::Mul: return Value::makeInt(a * b);
+            case parser::ArithmeticOp::Div:
+                return b == 0 ? Value::null() : Value::makeInt(a / b);
+        }
+    }
+    return evalExpression(e, rep);
+}
+
+bool evalHavingBool(const parser::Expression& e, const GroupRows& rows,
+                    const Tuple& rep) {
+    if (auto* log = dynamic_cast<const parser::LogicalExpr*>(&e)) {
+        bool l = evalHavingBool(*log->left, rows, rep);
+        bool r = evalHavingBool(*log->right, rows, rep);
+        return log->op == parser::LogicalOp::And ? (l && r) : (l || r);
+    }
+    if (auto* un = dynamic_cast<const parser::UnaryExpr*>(&e)) {
+        return !evalHavingBool(*un->operand, rows, rep);
+    }
+    if (auto* bin = dynamic_cast<const parser::BinaryExpr*>(&e)) {
+        Value l = evalHavingValue(*bin->left, rows, rep);
+        Value r = evalHavingValue(*bin->right, rows, rep);
+        auto cmp = compareValues(l, r);
+        if (!cmp.has_value()) return false;
+        switch (bin->op) {
+            case parser::ComparisonOp::Eq: return *cmp == 0;
+            case parser::ComparisonOp::Neq: return *cmp != 0;
+            case parser::ComparisonOp::Lt: return *cmp < 0;
+            case parser::ComparisonOp::Leq: return *cmp <= 0;
+            case parser::ComparisonOp::Gt: return *cmp > 0;
+            case parser::ComparisonOp::Geq: return *cmp >= 0;
+        }
+    }
+    Value v = evalHavingValue(e, rows, rep);
+    return v.type == ValueType::Bool && v.boolValue;
+}
+
 }
 
 ExecutorEngine::ExecutorEngine(StorageEngine& storage, semantic::Catalog& catalog,
@@ -810,7 +877,7 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         Schema schema;
         loadSchema(node.tableId, schema, names);
 
-        if (!node.aggregates.empty() || !node.groupBy.empty()) {
+        if (!node.aggregates.empty() || !node.groupBy.empty() || node.having) {
             auto arows = gatherRows(node.tableId, schema, node.where.get());
             std::vector<int> gcols;
             for (const auto& g : node.groupBy) gcols.push_back(g->columnIndex);
@@ -852,7 +919,7 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
                 const std::vector<Value>& rep = g.rows.empty() ? nullRow : *g.rows.front();
                 if (node.having) {
                     Tuple repTuple(rep);
-                    if (!predicateTrue(*node.having, repTuple)) continue;
+                    if (!evalHavingBool(*node.having, g.rows, repTuple)) continue;
                 }
                 std::vector<Value> outRow;
                 for (const auto& col : node.columns) {

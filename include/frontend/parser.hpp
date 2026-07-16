@@ -61,6 +61,7 @@ private:
 
     ColumnDefinition parseColumnDefinition();
     std::unique_ptr<ColumnRef> parseColumnRef();
+    std::unique_ptr<FunctionExpr> parseAggregate();
     std::string parseOptionalAlias();
     ExpressionPtr parseCase();
     ExpressionPtr parseCall();

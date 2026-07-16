@@ -321,6 +321,36 @@ void run() {
     auto tv0 = h.run("FETCH id, bal FROM tt AS OF 0;");
     assert(tv0.rows.empty());
 
+    /* MVCC garbage collection: compacting history keeps AS OF exact at/after the
+     * horizon and clamps older versions to the baseline. */
+    {
+        auto& vs = h.se.versions();
+        h.run("BUILD RELATION gct (id INT, v INT);");
+        h.run("PUT INTO gct VALUES (1,10);");
+        unsigned long long gA = vs.currentVersion();
+        h.run("PUT INTO gct VALUES (2,20);");
+        unsigned long long gB = vs.currentVersion();
+        h.run("MODIFY gct SET v = 99 WHEN id = 1;");
+        unsigned long long gC = vs.currentVersion();
+
+        std::size_t before = vs.changeCount();
+        vs.gc(gB);
+        assert(vs.baselineVersion() == gB);
+        assert(vs.changeCount() < before);
+
+        auto gc1 = h.run("FETCH id, v FROM gct AS OF " + std::to_string(gC) +
+                         " SORT BY id;");
+        assert(gc1.rows.size() == 2 && gc1.rows[0][1].intValue == 99 &&
+               gc1.rows[1][1].intValue == 20);
+        auto gb1 = h.run("FETCH id, v FROM gct AS OF " + std::to_string(gB) +
+                         " SORT BY id;");
+        assert(gb1.rows.size() == 2 && gb1.rows[0][1].intValue == 10 &&
+               gb1.rows[1][1].intValue == 20);
+        auto ga1 = h.run("FETCH id, v FROM gct AS OF " + std::to_string(gA) +
+                         " SORT BY id;");
+        assert(ga1.rows.size() == 2 && ga1.rows[0][1].intValue == 10);
+    }
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

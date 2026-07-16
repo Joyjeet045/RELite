@@ -37,6 +37,8 @@ private:
     void loadCatalog();
 
     void rebuildIndexes();
+    void saveVersions();
+    void loadVersions();
 
     void recover();
 };

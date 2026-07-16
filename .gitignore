@@ -21,6 +21,7 @@ Makefile
 *.db
 *.wal
 *.log
+*.versions
 
 # Editor / OS
 .vscode/

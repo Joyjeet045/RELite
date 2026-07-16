@@ -54,7 +54,9 @@ The full keyword vocabulary and SQL-to-Relite mapping are in
 - Thread-safe B+ tree + Bloom filter indexes
 - Write-ahead log with `fsync` durability, group-commit, checkpointing, and crash recovery
 - Row-level lock manager (two-phase locking) and a transaction manager with undo
-- Multiversion store for snapshot reads / `AS OF` time travel, kept beside the heap
+- Multiversion store for snapshot reads / `AS OF` time travel, kept beside the
+  heap; history is garbage-collected into per-table baselines and persisted
+  across restarts
 
 ## Build
 
@@ -137,6 +139,5 @@ harness locally for your own baseline.
 ## Roadmap
 
 Larger items not yet implemented: ARIES-style redo + `pageLSN`, full isolation
-levels with predicate locking, on-disk (persisted) version history with garbage
-collection, a paged (disk-backed) B+ tree, and a cost-based optimizer with merge
-join and external-sort spill.
+levels with predicate locking, a paged (disk-backed) B+ tree, and a cost-based
+optimizer with merge join and external-sort spill.

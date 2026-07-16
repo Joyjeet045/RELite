@@ -20,6 +20,7 @@
 #include "txn/transaction_manager.hpp"
 #include "txn/wal.hpp"
 #include "vm/executor_engine.hpp"
+#include "vm/record_id.hpp"
 #include "vm/result_set.hpp"
 #include "vm/storage_engine.hpp"
 #include "vm/table_manager.hpp"
@@ -32,6 +33,7 @@ namespace {
 constexpr const char* kDefaultDbFile = "relite.db";
 constexpr const char* kDefaultWalFile = "relite.wal";
 constexpr const char* kMetaFile = "relite.meta";
+constexpr const char* kVersionFile = "relite.versions";
 
 constexpr std::size_t kCheckpointRecords = 256;
 
@@ -101,6 +103,7 @@ DB::DB()
     loadCatalog();
     recover();
     rebuildIndexes();
+    loadVersions();
 }
 
 DB::~DB() {
@@ -112,6 +115,7 @@ DB::~DB() {
         storage_->flush();
     }
     saveCatalog();
+    saveVersions();
 }
 
 std::string DB::connect(const std::string& query) {
@@ -145,6 +149,7 @@ std::string DB::connect(const std::string& query) {
             saveCatalog();
             if (wal_ && wal_->pendingRecords() >= kCheckpointRecords) {
                 wal_->reset();
+                saveVersions();
             }
         }
         return formatResult(rs);
@@ -415,6 +420,43 @@ void DB::rebuildIndexes() {
                 idx->add(idx->keyOf(tup.values()), it.rid());
             }
         }
+    }
+}
+
+void DB::saveVersions() {
+    if (!storage_) return;
+    const std::string tmpPath = std::string(kVersionFile) + ".tmp";
+    {
+        std::ofstream out(tmpPath, std::ios::trunc | std::ios::binary);
+        if (!out) return;
+        out.precision(17);
+        storage_->versions().serialize(out);
+        out.flush();
+    }
+    backend::syncFileToDisk(tmpPath);
+    std::error_code ec;
+    std::filesystem::rename(tmpPath, kVersionFile, ec);
+    if (ec) {
+        std::filesystem::copy_file(tmpPath, kVersionFile,
+                                   std::filesystem::copy_options::overwrite_existing, ec);
+        std::filesystem::remove(tmpPath, ec);
+    }
+}
+
+void DB::loadVersions() {
+    {
+        std::ifstream in(kVersionFile, std::ios::binary);
+        if (in) storage_->versions().deserialize(in);
+    }
+    for (const semantic::TableSchema* ts : catalog_.allTables()) {
+        if (ts->isView) continue;
+        if (storage_->versions().hasHistory(ts->tableId)) continue;
+        std::vector<std::pair<vm::RecordID, std::string>> rows;
+        for (vm::TableIterator it(&storage_->tables(), ts->tableId); it.valid();
+             it.next()) {
+            rows.emplace_back(it.rid(), it.bytes());
+        }
+        storage_->versions().seedBaseline(ts->tableId, std::move(rows));
     }
 }
 

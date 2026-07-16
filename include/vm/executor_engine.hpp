@@ -69,6 +69,8 @@ private:
                           const std::vector<Value>& row);
     void checkDeleteRestrict(const semantic::TableSchema& schema,
                              const std::vector<Value>& row);
+    void applyReferentialActions(const semantic::TableSchema& parent,
+                                 const std::vector<Value>& parentRow);
 
     void enforceConstraints(const semantic::TableSchema& schema, int tableId,
                             const std::vector<Value>& row, const RecordID* excludeRid);

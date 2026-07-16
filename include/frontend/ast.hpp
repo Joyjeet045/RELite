@@ -219,6 +219,7 @@ struct ColumnDefinition {
     int varcharLength = 0;
     std::string refTable;
     std::string refColumn;
+    int refOnDelete = 0;
 
     bool notNull = false;
     bool primaryKey = false;

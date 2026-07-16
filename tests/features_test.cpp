@@ -207,6 +207,18 @@ void run() {
         "FETCH dept FROM emp GROUP BY dept HAVING SUM(sal) > 300 SORT BY dept;");
     assert(hv2.rows.size() == 1 && hv2.rows[0][0].textValue == "sa");
 
+    /* ON REMOVE CASCADE deletes children; SET NULL nulls the child FK. */
+    h.run("BUILD RELATION par (id INT PRIMARY KEY);");
+    h.run("BUILD RELATION ch (id INT, p INT REFERENCES par(id) ON REMOVE CASCADE);");
+    h.run("BUILD RELATION nt (id INT, p INT REFERENCES par(id) ON REMOVE SET NULL);");
+    h.run("PUT INTO par VALUES (1),(2);");
+    h.run("PUT INTO ch VALUES (10,1),(11,1),(12,2);");
+    h.run("PUT INTO nt VALUES (20,1),(21,2);");
+    h.run("REMOVE FROM par WHEN id = 1;");
+    assert(h.run("FETCH id FROM ch SORT BY id;").rows.size() == 1);
+    auto nn = h.run("FETCH p FROM nt WHEN id = 20;");
+    assert(nn.rows.size() == 1 && nn.rows[0][0].isNull());
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

@@ -31,6 +31,8 @@ enum class TokenType {
     DEFAULT,
     CHECK,
     AUTOINCR,
+    CASCADE,
+    RESTRICT,
 
     ORDER,
     BY,

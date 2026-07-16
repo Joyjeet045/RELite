@@ -129,12 +129,14 @@ bool Catalog::dropColumn(const std::string& table, const std::string& column) {
 }
 
 bool Catalog::addForeignKey(const std::string& table, int columnIndex,
-                            const std::string& refTable, const std::string& refColumn) {
+                            const std::string& refTable, const std::string& refColumn,
+                            ForeignKey::Action onDelete) {
     auto it = tables_.find(table);
     if (it == tables_.end()) {
         return false;
     }
-    it->second.foreignKeys.push_back(ForeignKey{columnIndex, refTable, refColumn});
+    it->second.foreignKeys.push_back(
+        ForeignKey{columnIndex, refTable, refColumn, onDelete});
     return true;
 }
 

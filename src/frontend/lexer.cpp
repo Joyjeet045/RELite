@@ -48,6 +48,7 @@ const std::unordered_map<std::string, TokenType>& keywordTable() {
         {"DEFAULT", TokenType::DEFAULT}, {"CHECK", TokenType::CHECK},
         {"AUTO_INCREMENT", TokenType::AUTOINCR},
         {"SERIAL", TokenType::AUTOINCR},
+        {"CASCADE", TokenType::CASCADE}, {"RESTRICT", TokenType::RESTRICT},
         {"UNIQUEONLY", TokenType::DISTINCT},
         {"UNION", TokenType::UNION},     {"INTERSECT", TokenType::INTERSECT},
         {"EXCEPT", TokenType::EXCEPT},   {"ALL", TokenType::ALL},
@@ -258,6 +259,8 @@ std::string_view tokenTypeName(TokenType type) {
         case TokenType::DEFAULT: return "DEFAULT";
         case TokenType::CHECK: return "CHECK";
         case TokenType::AUTOINCR: return "AUTO_INCREMENT";
+        case TokenType::CASCADE: return "CASCADE";
+        case TokenType::RESTRICT: return "RESTRICT";
         case TokenType::DISTINCT: return "DISTINCT";
         case TokenType::ORDER: return "ORDER";
         case TokenType::BY: return "BY";

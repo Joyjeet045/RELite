@@ -294,6 +294,18 @@ ColumnDefinition Parser::parseColumnDefinition() {
             consume(TokenType::LPAREN, "'('");
             def.refColumn = consume(TokenType::IDENTIFIER, "referenced column").lexeme;
             consume(TokenType::RPAREN, "')'");
+            if (match(TokenType::ON)) {
+                consume(TokenType::DELETE, "REMOVE");
+                if (match(TokenType::CASCADE)) {
+                    def.refOnDelete = 1;
+                } else if (match(TokenType::SET)) {
+                    consume(TokenType::NULL_LITERAL, "NULL");
+                    def.refOnDelete = 2;
+                } else {
+                    consume(TokenType::RESTRICT, "RESTRICT");
+                    def.refOnDelete = 0;
+                }
+            }
         } else if (match(TokenType::CHECK)) {
             consume(TokenType::LPAREN, "'('");
             ExpressionPtr e = parseExpression();

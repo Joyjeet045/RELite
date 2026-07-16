@@ -470,6 +470,109 @@ void ExecutorEngine::checkDeleteRestrict(const semantic::TableSchema& schema,
     }
 }
 
+void ExecutorEngine::applyReferentialActions(const semantic::TableSchema& parent,
+                                             const std::vector<Value>& parentRow) {
+    for (const semantic::TableSchema* child : catalog_.allTables()) {
+        for (const auto& fk : child->foreignKeys) {
+            if (fk.refTable != parent.name) continue;
+            int pcol = parent.columnIndex(fk.refColumn);
+            if (pcol < 0 || pcol >= static_cast<int>(parentRow.size())) continue;
+            const Value& parentVal = parentRow[pcol];
+            if (parentVal.isNull()) continue;
+
+            Schema cschema = schemaOf(*child);
+            std::vector<index::Index*> cindexes =
+                storage_.indexes().forTable(child->tableId);
+
+            std::vector<std::pair<RecordID, std::vector<Value>>> matches;
+            SeqScanExecutor scan(&storage_.tables(), child->tableId, cschema);
+            scan.init();
+            Tuple t;
+            RecordID rid;
+            while (scan.next(t, rid)) {
+                if (fk.columnIndex >= static_cast<int>(t.size())) continue;
+                const Value& cv = t.at(fk.columnIndex);
+                if (cv.isNull()) continue;
+                auto cmp = compareValues(cv, parentVal);
+                if (cmp.has_value() && *cmp == 0) matches.emplace_back(rid, t.values());
+            }
+            if (matches.empty()) continue;
+
+            if (fk.onDelete == semantic::ForeignKey::Action::Restrict) {
+                throw std::runtime_error(
+                    "foreign key violation: row is referenced by table '" +
+                    child->name + "'");
+            }
+
+            for (auto& [crid, crow] : matches) {
+                Tuple ctuple(crow);
+                if (fk.onDelete == semantic::ForeignKey::Action::Cascade) {
+                    applyReferentialActions(*child, crow);
+                    if (txnActive()) lockOrThrow(crid, true);
+                    std::string bytes = ctuple.serialize(cschema);
+                    std::vector<std::pair<index::Index*, Value>> idxKeys;
+                    for (index::Index* idx : cindexes) {
+                        if (idx->columnIndex < static_cast<int>(ctuple.size())) {
+                            idxKeys.emplace_back(idx, ctuple.at(idx->columnIndex));
+                            idx->remove(ctuple.at(idx->columnIndex), crid);
+                        }
+                    }
+                    if (txnActive()) {
+                        StorageEngine* se = &storage_;
+                        int tid = child->tableId;
+                        txnMgr_->logDelete(*currentTxn_, tid, crid, bytes);
+                        txnMgr_->registerUndo(*currentTxn_, [se, tid, bytes, idxKeys] {
+                            RecordID nr = se->tables().insertTuple(tid, bytes);
+                            for (const auto& [idx, key] : idxKeys) idx->add(key, nr);
+                        });
+                    }
+                    storage_.tables().eraseTuple(child->tableId, crid);
+                } else {
+                    std::vector<Value> nv = crow;
+                    nv[fk.columnIndex] = Value::null();
+                    Tuple newTup(nv);
+                    if (txnActive()) lockOrThrow(crid, true);
+                    for (index::Index* idx : cindexes) {
+                        if (idx->columnIndex < static_cast<int>(ctuple.size())) {
+                            idx->remove(ctuple.at(idx->columnIndex), crid);
+                        }
+                    }
+                    std::string oldBytes = ctuple.serialize(cschema);
+                    std::string newBytes = newTup.serialize(cschema);
+                    RecordID nr =
+                        storage_.tables().updateTuple(child->tableId, crid, newBytes);
+                    if (txnActive()) lockOrThrow(nr, true);
+                    for (index::Index* idx : cindexes) {
+                        if (idx->columnIndex < static_cast<int>(newTup.size())) {
+                            idx->add(newTup.at(idx->columnIndex), nr);
+                        }
+                    }
+                    if (txnActive()) {
+                        StorageEngine* se = &storage_;
+                        int tid = child->tableId;
+                        txnMgr_->logDelete(*currentTxn_, tid, crid, oldBytes);
+                        txnMgr_->logInsert(*currentTxn_, tid, nr, newBytes);
+                        std::vector<std::pair<index::Index*, Value>> oldKeys, newKeys;
+                        for (index::Index* idx : cindexes) {
+                            if (idx->columnIndex < static_cast<int>(ctuple.size())) {
+                                oldKeys.emplace_back(idx, ctuple.at(idx->columnIndex));
+                                newKeys.emplace_back(idx, newTup.at(idx->columnIndex));
+                            }
+                        }
+                        txnMgr_->registerUndo(
+                            *currentTxn_, [se, tid, nr, oldBytes, oldKeys, newKeys] {
+                                for (const auto& [idx, key] : newKeys) idx->remove(key, nr);
+                                se->tables().eraseTuple(tid, nr);
+                                RecordID rr = se->tables().insertTuple(tid, oldBytes);
+                                for (const auto& [idx, key] : oldKeys) idx->add(key, rr);
+                            });
+                    }
+                }
+            }
+        }
+    }
+}
+
 void ExecutorEngine::lockOrThrow(const RecordID& rid, bool exclusive) {
     bool ok = exclusive ? txnMgr_->lockExclusive(*currentTxn_, rid)
                         : txnMgr_->lockShared(*currentTxn_, rid);
@@ -1036,7 +1139,7 @@ void ExecutorEngine::visit(parser::DeleteStatement& node) {
     if (ts != nullptr) {
         for (auto& [vrid, vtuple] : victims) {
             (void)vrid;
-            checkDeleteRestrict(*ts, vtuple.values());
+            applyReferentialActions(*ts, vtuple.values());
         }
     }
 
@@ -1182,9 +1285,13 @@ void ExecutorEngine::visit(parser::AlterStatement& node) {
                            semantic::ColumnSchema{node.column.name, node.column.type,
                                                   node.column.varcharLength});
         if (!node.column.refTable.empty()) {
+            semantic::ForeignKey::Action act =
+                node.column.refOnDelete == 1   ? semantic::ForeignKey::Action::Cascade
+                : node.column.refOnDelete == 2 ? semantic::ForeignKey::Action::SetNull
+                                               : semantic::ForeignKey::Action::Restrict;
             catalog_.addForeignKey(node.table,
                                    static_cast<int>(newSchema.size()) - 1,
-                                   node.column.refTable, node.column.refColumn);
+                                   node.column.refTable, node.column.refColumn, act);
         }
         result_.message = "RESHAPE RELATION (ADD COLUMN)";
     } else {

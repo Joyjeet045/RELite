@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "index/bloom_filter.hpp"
-#include "index/bplus_tree.hpp"
+#include "index/disk_bplus_tree.hpp"
 #include "vm/record_id.hpp"
 #include "vm/value.hpp"
 
@@ -18,13 +18,13 @@ struct Index {
     int tableId;
     int columnIndex;
     std::vector<int> columns;
-    BPlusTree tree;
+    DiskBPlusTree tree;
     BloomFilter bloom;
 
-    Index(std::string n, int t, std::vector<int> cols)
+    Index(std::string n, int t, std::vector<int> cols, backend::BufferPool* pool)
         : name(std::move(n)), tableId(t),
           columnIndex(cols.empty() ? -1 : cols.front()),
-          columns(std::move(cols)), tree(), bloom(4096) {}
+          columns(std::move(cols)), tree(pool), bloom(4096) {}
 
     bool isComposite() const { return columns.size() > 1; }
     bool coversRow(std::size_t width) const {
@@ -43,6 +43,8 @@ struct Index {
 
 class IndexManager {
 public:
+    void setBufferPool(backend::BufferPool* pool) { pool_ = pool; }
+
     Index* create(const std::string& name, int tableId, std::vector<int> columns);
     bool exists(const std::string& name) const;
     bool drop(const std::string& name);
@@ -56,6 +58,7 @@ public:
 private:
     mutable std::mutex mutex_;
     std::unordered_map<std::string, std::unique_ptr<Index>> byName_;
+    backend::BufferPool* pool_ = nullptr;
 };
 
 }

@@ -62,7 +62,7 @@ Index* IndexManager::create(const std::string& name, int tableId,
     if (byName_.count(name) != 0) {
         return nullptr;
     }
-    auto idx = std::make_unique<Index>(name, tableId, std::move(columns));
+    auto idx = std::make_unique<Index>(name, tableId, std::move(columns), pool_);
     Index* raw = idx.get();
     byName_.emplace(name, std::move(idx));
     return raw;

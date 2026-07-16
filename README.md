@@ -51,7 +51,8 @@ The full keyword vocabulary and SQL-to-Relite mapping are in
   vectors) for ungrouped aggregates, alongside the Volcano engine; `EXPLAIN`
   marks it as `Aggregate (Vectorized)`
 - 4 KB slotted pages, disk manager, LRU buffer pool with page guards, page compaction
-- Thread-safe B+ tree + Bloom filter indexes
+- Page-resident (disk-backed) B+ tree indexes — nodes live in buffer-pool pages
+  and are evictable rather than held wholly in RAM — plus Bloom filters
 - Write-ahead log with `fsync` durability, group-commit, checkpointing, and crash recovery
 - Row-level lock manager (two-phase locking) and a transaction manager with undo
 - Snapshot isolation: a transaction reads a stable snapshot (committed state at
@@ -86,7 +87,7 @@ Type `\h` for help and `\q` to quit.
 
 ## Tests
 
-Twelve self-contained suites run via CTest:
+Thirteen self-contained suites run via CTest:
 
 ```sh
 ctest --test-dir build --output-on-failure
@@ -142,5 +143,5 @@ harness locally for your own baseline.
 ## Roadmap
 
 Larger items not yet implemented: ARIES-style redo + `pageLSN`, serializable
-isolation with predicate locking, a paged (disk-backed) B+ tree, and a
-cost-based optimizer with merge join and external-sort spill.
+isolation with predicate locking, and a cost-based optimizer with merge join and
+external-sort spill.

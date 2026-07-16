@@ -30,6 +30,7 @@ add_library(relite_core
     src/vm/executor_engine.cpp
     src/index/bloom_filter.cpp
     src/index/bplus_tree.cpp
+    src/index/disk_bplus_tree.cpp
     src/index/index_manager.cpp
     src/txn/lock_manager.cpp
     src/txn/wal.cpp
@@ -105,3 +106,7 @@ add_test(NAME features_test COMMAND features_test)
 add_executable(vectorized_test tests/vectorized_test.cpp)
 target_link_libraries(vectorized_test PRIVATE relite_core)
 add_test(NAME vectorized_test COMMAND vectorized_test)
+
+add_executable(disk_index_test tests/disk_index_test.cpp)
+target_link_libraries(disk_index_test PRIVATE relite_core)
+add_test(NAME disk_index_test COMMAND disk_index_test)

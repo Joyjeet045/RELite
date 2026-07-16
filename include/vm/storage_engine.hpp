@@ -15,7 +15,9 @@ class StorageEngine {
 public:
     explicit StorageEngine(const std::string& path, bool truncate = true,
                            std::size_t frames = 128)
-        : disk_(path, truncate), pool_(&disk_, frames), tables_(&pool_) {}
+        : disk_(path, truncate), pool_(&disk_, frames), tables_(&pool_) {
+        indexes_.setBufferPool(&pool_);
+    }
 
     TableManager& tables() { return tables_; }
     index::IndexManager& indexes() { return indexes_; }

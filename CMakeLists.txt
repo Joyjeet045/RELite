@@ -46,6 +46,12 @@ add_executable(relite main.cpp)
 target_link_libraries(relite PRIVATE relite_core)
 
 # ---------------------------------------------------------------------------
+# Benchmark executable (opt-in, not a CTest test).
+# ---------------------------------------------------------------------------
+add_executable(relite_bench tools/benchmark.cpp)
+target_link_libraries(relite_bench PRIVATE relite_core)
+
+# ---------------------------------------------------------------------------
 # Tests (self-contained, no external framework required).
 # ---------------------------------------------------------------------------
 enable_testing()

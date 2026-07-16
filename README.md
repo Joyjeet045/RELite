@@ -99,6 +99,32 @@ The accepted query language (and its SQL-to-Relite keyword mapping) is documente
 [docs/grammar.txt](docs/grammar.txt). The authoritative grammar is the recursive-descent
 parser in `src/frontend/parser.cpp`.
 
+## Benchmarks
+
+A self-contained harness (`tools/benchmark.cpp`) drives the same
+lexer → parser → analyzer → executor pipeline the REPL uses, against a real
+storage engine, WAL, and lock manager.
+
+```sh
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target relite_bench
+./build-release/relite_bench
+```
+
+Representative results (Release build, single thread, warm cache, commodity
+laptop; 50K-row table):
+
+| Workload                          | Throughput      | Latency        |
+| --------------------------------- | --------------- | -------------- |
+| Insert (single-row statements)    | ~215K rows/s    | ~4.6 µs/row    |
+| Point lookup (B+ tree index)      | ~120K lookups/s | ~8.4 µs/lookup |
+| Scan + aggregate (`COUNT`/`SUM`)  | ~1.7M rows/s    | ~29 ms / 50K   |
+| Durable commit (`fsync` per txn)  | ~1.3K commits/s | ~0.77 ms/commit |
+
+Insert/lookup figures are end-to-end (they include SQL parsing and planning on
+every statement); commit throughput is bounded by `fsync`. Numbers vary with
+hardware and dataset size — run the harness locally for your own baseline.
+
 ## Roadmap
 
 Larger items not yet implemented: ARIES-style redo + `pageLSN`, MVCC / isolation levels,

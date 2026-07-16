@@ -185,7 +185,8 @@ Column definitions and constraints
                | "AUTO_INCREMENT"                       ; INT only; also SERIAL
                | "DEFAULT" literal
                | "REFERENCES" ident "(" ident ")"       ; inline foreign key
-                 [ "ON" "REMOVE" ( "CASCADE" | "SET" "NULL" | "RESTRICT" ) ]
+                 { "ON" ( "REMOVE" | "MODIFY" )
+                       ( "CASCADE" | "SET" "NULL" | "RESTRICT" ) }
                | "CHECK" "(" expression ")" ;
 
 

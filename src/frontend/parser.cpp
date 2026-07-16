@@ -332,16 +332,27 @@ ColumnDefinition Parser::parseColumnDefinition() {
             consume(TokenType::LPAREN, "'('");
             def.refColumn = consume(TokenType::IDENTIFIER, "referenced column").lexeme;
             consume(TokenType::RPAREN, "')'");
-            if (match(TokenType::ON)) {
-                consume(TokenType::DELETE, "REMOVE");
+            while (match(TokenType::ON)) {
+                bool onUpdate = false;
+                if (match(TokenType::UPDATE)) {
+                    onUpdate = true;
+                } else {
+                    consume(TokenType::DELETE, "REMOVE or MODIFY");
+                }
+                int action = 0;
                 if (match(TokenType::CASCADE)) {
-                    def.refOnDelete = 1;
+                    action = 1;
                 } else if (match(TokenType::SET)) {
                     consume(TokenType::NULL_LITERAL, "NULL");
-                    def.refOnDelete = 2;
+                    action = 2;
                 } else {
                     consume(TokenType::RESTRICT, "RESTRICT");
-                    def.refOnDelete = 0;
+                    action = 0;
+                }
+                if (onUpdate) {
+                    def.refOnUpdate = action;
+                } else {
+                    def.refOnDelete = action;
                 }
             }
         } else if (match(TokenType::CHECK)) {

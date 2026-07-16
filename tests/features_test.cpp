@@ -536,6 +536,25 @@ void run() {
                rr.rows[0][0].intValue == 2 && rr.rows[0][1].intValue == 25);
     }
 
+    /* ON MODIFY CASCADE propagates a parent key change; SET NULL nulls it. */
+    {
+        h.run("BUILD RELATION mpar (id INT PRIMARY KEY);");
+        h.run("BUILD RELATION mcc (id INT, "
+              "p INT REFERENCES mpar(id) ON MODIFY CASCADE);");
+        h.run("BUILD RELATION mnn (id INT, "
+              "p INT REFERENCES mpar(id) ON MODIFY SET NULL);");
+        h.run("PUT INTO mpar VALUES (1),(2);");
+        h.run("PUT INTO mcc VALUES (10,1),(11,1),(12,2);");
+        h.run("PUT INTO mnn VALUES (20,1),(21,2);");
+        h.run("MODIFY mpar SET id = 99 WHEN id = 1;");
+        auto cc = h.run("FETCH id FROM mcc WHEN p = 99 SORT BY id;");
+        assert(cc.rows.size() == 2 && cc.rows[0][0].intValue == 10 &&
+               cc.rows[1][0].intValue == 11);
+        assert(h.run("FETCH id FROM mcc WHEN p = 2;").rows.size() == 1);
+        auto nn2 = h.run("FETCH p FROM mnn WHEN id = 20;");
+        assert(nn2.rows.size() == 1 && nn2.rows[0][0].isNull());
+    }
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

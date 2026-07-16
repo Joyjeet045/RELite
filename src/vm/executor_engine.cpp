@@ -913,6 +913,107 @@ void ExecutorEngine::applyReferentialActions(const semantic::TableSchema& parent
     }
 }
 
+void ExecutorEngine::applyUpdateReferentialActions(
+    const semantic::TableSchema& parent,
+    const std::vector<Value>& oldParentRow,
+    const std::vector<Value>& newParentRow) {
+    for (const semantic::TableSchema* child : catalog_.allTables()) {
+        for (const auto& fk : child->foreignKeys) {
+            if (fk.refTable != parent.name) continue;
+            int pcol = parent.columnIndex(fk.refColumn);
+            if (pcol < 0 || pcol >= static_cast<int>(oldParentRow.size())) continue;
+            const Value& oldVal = oldParentRow[pcol];
+            Value newVal = (pcol < static_cast<int>(newParentRow.size()))
+                               ? newParentRow[pcol]
+                               : Value::null();
+            if (oldVal.isNull()) continue;
+            auto same = compareValues(oldVal, newVal);
+            if (same.has_value() && *same == 0) continue;
+
+            Schema cschema = schemaOf(*child);
+            std::vector<index::Index*> cindexes =
+                storage_.indexes().forTable(child->tableId);
+
+            std::vector<std::pair<RecordID, std::vector<Value>>> matches;
+            {
+                SeqScanExecutor scan(&storage_.tables(), child->tableId, cschema);
+                scan.init();
+                Tuple t;
+                RecordID rid;
+                while (scan.next(t, rid)) {
+                    if (fk.columnIndex >= static_cast<int>(t.size())) continue;
+                    const Value& cv = t.at(fk.columnIndex);
+                    if (cv.isNull()) continue;
+                    auto cmp = compareValues(cv, oldVal);
+                    if (cmp.has_value() && *cmp == 0) {
+                        matches.emplace_back(rid, t.values());
+                    }
+                }
+            }
+            if (matches.empty()) continue;
+
+            if (fk.onUpdate == semantic::ForeignKey::Action::Restrict) {
+                throw std::runtime_error(
+                    "foreign key violation: row is referenced by table '" +
+                    child->name + "'");
+            }
+
+            for (auto& [crid, crow] : matches) {
+                Tuple ctuple(crow);
+                std::vector<Value> nv = crow;
+                nv[fk.columnIndex] =
+                    (fk.onUpdate == semantic::ForeignKey::Action::Cascade)
+                        ? newVal
+                        : Value::null();
+                Tuple newTup(nv);
+
+                if (fk.onUpdate == semantic::ForeignKey::Action::Cascade) {
+                    applyUpdateReferentialActions(*child, crow, nv);
+                }
+
+                if (txnActive()) lockOrThrow(crid, /*exclusive=*/true);
+                for (index::Index* idx : cindexes) {
+                    if (idx->coversRow(ctuple.size())) {
+                        idx->remove(idx->keyOf(ctuple.values()), crid);
+                    }
+                }
+                std::string oldBytes = ctuple.serialize(cschema);
+                std::string newBytes = newTup.serialize(cschema);
+                RecordID nr =
+                    storage_.tables().updateTuple(child->tableId, crid, newBytes);
+                if (txnActive()) lockOrThrow(nr, /*exclusive=*/true);
+                for (index::Index* idx : cindexes) {
+                    if (idx->coversRow(newTup.size())) {
+                        idx->add(idx->keyOf(newTup.values()), nr);
+                    }
+                }
+                storage_.versions().stageDelete(child->tableId, crid);
+                storage_.versions().stageInsert(child->tableId, nr, newBytes);
+                if (txnActive()) {
+                    StorageEngine* se = &storage_;
+                    int tid = child->tableId;
+                    txnMgr_->logDelete(*currentTxn_, tid, crid, oldBytes);
+                    txnMgr_->logInsert(*currentTxn_, tid, nr, newBytes);
+                    std::vector<std::pair<index::Index*, Value>> oldKeys, newKeys;
+                    for (index::Index* idx : cindexes) {
+                        if (idx->coversRow(ctuple.size())) {
+                            oldKeys.emplace_back(idx, idx->keyOf(ctuple.values()));
+                            newKeys.emplace_back(idx, idx->keyOf(newTup.values()));
+                        }
+                    }
+                    txnMgr_->registerUndo(
+                        *currentTxn_, [se, tid, nr, oldBytes, oldKeys, newKeys] {
+                            for (const auto& [idx, key] : newKeys) idx->remove(key, nr);
+                            se->tables().eraseTuple(tid, nr);
+                            RecordID rr = se->tables().insertTuple(tid, oldBytes);
+                            for (const auto& [idx, key] : oldKeys) idx->add(key, rr);
+                        });
+                }
+            }
+        }
+    }
+}
+
 void ExecutorEngine::lockOrThrow(const RecordID& rid, bool exclusive) {
     bool ok = exclusive ? txnMgr_->lockExclusive(*currentTxn_, rid)
                         : txnMgr_->lockShared(*currentTxn_, rid);
@@ -2133,6 +2234,7 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
         if (ts != nullptr) {
             checkForeignKeys(*ts, newTup.values());
             enforceConstraints(*ts, node.tableId, newTup.values(), &rid);
+            applyUpdateReferentialActions(*ts, row, newVals);
         }
         std::string oldBytes = oldTup.serialize(schema);
         std::string newBytes = newTup.serialize(schema);
@@ -2280,9 +2382,14 @@ void ExecutorEngine::visit(parser::AlterStatement& node) {
                 node.column.refOnDelete == 1   ? semantic::ForeignKey::Action::Cascade
                 : node.column.refOnDelete == 2 ? semantic::ForeignKey::Action::SetNull
                                                : semantic::ForeignKey::Action::Restrict;
+            semantic::ForeignKey::Action actUpd =
+                node.column.refOnUpdate == 1   ? semantic::ForeignKey::Action::Cascade
+                : node.column.refOnUpdate == 2 ? semantic::ForeignKey::Action::SetNull
+                                               : semantic::ForeignKey::Action::Restrict;
             catalog_.addForeignKey(node.table,
                                    static_cast<int>(newSchema.size()) - 1,
-                                   node.column.refTable, node.column.refColumn, act);
+                                   node.column.refTable, node.column.refColumn, act,
+                                   actUpd);
         }
         result_.message = "RESHAPE RELATION (ADD COLUMN)";
     } else {

@@ -571,8 +571,12 @@ void SemanticAnalyzer::visit(parser::CreateStatement& node) {
             def.refOnDelete == 1   ? ForeignKey::Action::Cascade
             : def.refOnDelete == 2 ? ForeignKey::Action::SetNull
                                    : ForeignKey::Action::Restrict;
+        ForeignKey::Action actUpd =
+            def.refOnUpdate == 1   ? ForeignKey::Action::Cascade
+            : def.refOnUpdate == 2 ? ForeignKey::Action::SetNull
+                                   : ForeignKey::Action::Restrict;
         catalog_.addForeignKey(node.table, static_cast<int>(i), def.refTable,
-                               def.refColumn, act);
+                               def.refColumn, act, actUpd);
     }
 
     for (const auto& def : node.columns) {

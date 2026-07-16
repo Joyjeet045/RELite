@@ -31,6 +31,7 @@ struct ForeignKey {
     std::string refTable;
     std::string refColumn;
     Action onDelete = Action::Restrict;
+    Action onUpdate = Action::Restrict;
 };
 
 struct TableSchema {
@@ -70,7 +71,8 @@ public:
     bool dropColumn(const std::string& table, const std::string& column);
     bool addForeignKey(const std::string& table, int columnIndex,
                        const std::string& refTable, const std::string& refColumn,
-                       ForeignKey::Action onDelete = ForeignKey::Action::Restrict);
+                       ForeignKey::Action onDelete = ForeignKey::Action::Restrict,
+                       ForeignKey::Action onUpdate = ForeignKey::Action::Restrict);
 
     bool createIndex(const std::string& indexName, const std::string& table,
                      const std::vector<std::string>& columns);

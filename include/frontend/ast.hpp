@@ -243,6 +243,7 @@ struct ColumnDefinition {
     std::string refTable;
     std::string refColumn;
     int refOnDelete = 0;
+    int refOnUpdate = 0;
 
     bool notNull = false;
     bool primaryKey = false;

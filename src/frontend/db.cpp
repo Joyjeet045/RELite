@@ -167,7 +167,7 @@ void DB::saveCatalog() {
         out.precision(17);
 
         auto& cat = catalog_;
-        out << "RELITE8\n";
+        out << "RELITE9\n";
         out << cat.nextTableId() << "\n";
 
         auto allTables = cat.allTables();
@@ -199,7 +199,8 @@ void DB::saveCatalog() {
             out << ts->foreignKeys.size() << "\n";
             for (const auto& fk : ts->foreignKeys) {
                 out << fk.columnIndex << " " << fk.refTable << " " << fk.refColumn
-                    << " " << static_cast<int>(fk.onDelete) << "\n";
+                    << " " << static_cast<int>(fk.onDelete) << " "
+                    << static_cast<int>(fk.onUpdate) << "\n";
             }
             const auto& pages = storage_->tables().pageList(ts->tableId);
             out << pages.size();
@@ -253,6 +254,7 @@ void DB::loadCatalog() {
     else if (magic == "RELITE6") ver = 6;
     else if (magic == "RELITE7") ver = 7;
     else if (magic == "RELITE8") ver = 8;
+    else if (magic == "RELITE9") ver = 9;
     else return;
 
     auto& cat = catalog_;
@@ -313,6 +315,11 @@ void DB::loadCatalog() {
                 int act = 0;
                 in >> act;
                 fk.onDelete = static_cast<semantic::ForeignKey::Action>(act);
+            }
+            if (ver >= 9) {
+                int actUpd = 0;
+                in >> actUpd;
+                fk.onUpdate = static_cast<semantic::ForeignKey::Action>(actUpd);
             }
             ts.foreignKeys.push_back(fk);
         }

@@ -167,7 +167,7 @@ void DB::saveCatalog() {
         out.precision(17);
 
         auto& cat = catalog_;
-        out << "RELITE10\n";
+        out << "RELITE9\n";
         out << cat.nextTableId() << "\n";
 
         auto allTables = cat.allTables();
@@ -209,8 +209,6 @@ void DB::saveCatalog() {
             out << pages.size();
             for (backend::PageId p : pages) out << " " << p;
             out << "\n";
-            out << storage_->tables().rootPage(ts->tableId) << " "
-                << storage_->tables().nextRowidValue(ts->tableId) << "\n";
         }
 
         auto idxs = cat.allIndexes();
@@ -260,7 +258,6 @@ void DB::loadCatalog() {
     else if (magic == "RELITE7") ver = 7;
     else if (magic == "RELITE8") ver = 8;
     else if (magic == "RELITE9") ver = 9;
-    else if (magic == "RELITE10") ver = 10;
     else return;
 
     auto& cat = catalog_;
@@ -346,15 +343,9 @@ void DB::loadCatalog() {
             in >> pid;
             pages.push_back(pid);
         }
-        int clusterRoot = -1;
-        long long clusterRowid = 0;
-        if (ver >= 10) {
-            in >> clusterRoot >> clusterRowid;
-        }
         cat.restoreTable(ts);
         storage_->tables().registerTable(ts.tableId);
         storage_->tables().restorePages(ts.tableId, std::move(pages));
-        storage_->tables().restoreClustered(ts.tableId, clusterRoot, clusterRowid);
     }
     cat.setNextTableId(nextId);
 

@@ -26,7 +26,6 @@ add_library(relite_core
     src/vm/value.cpp
     src/vm/tuple.cpp
     src/vm/table_manager.cpp
-    src/vm/clustered_tree.cpp
     src/vm/version_store.cpp
     src/vm/vectorized.cpp
     src/vm/optimizer.cpp

@@ -720,8 +720,10 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
                 groups.emplace_back();
             }
 
-            for (const auto& col : node.columns) result_.columns.push_back(col->column);
-            for (const auto& fn : node.aggregates) result_.columns.push_back(aggLabel(*fn));
+            for (const auto& col : node.columns)
+                result_.columns.push_back(col->alias.empty() ? col->column : col->alias);
+            for (const auto& fn : node.aggregates)
+                result_.columns.push_back(fn->alias.empty() ? aggLabel(*fn) : fn->alias);
 
             const std::vector<Value> nullRow(schema.size(), Value::null());
             for (const auto& g : groups) {
@@ -746,6 +748,11 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
                     outRow.push_back(computeAggregate(*fn, g.rows));
                 }
                 result_.rows.push_back(std::move(outRow));
+            }
+            if (node.offset > 0) {
+                std::size_t off = static_cast<std::size_t>(node.offset);
+                if (off >= result_.rows.size()) result_.rows.clear();
+                else result_.rows.erase(result_.rows.begin(), result_.rows.begin() + off);
             }
             if (node.hasLimit && node.limit >= 0 &&
                 static_cast<std::size_t>(node.limit) < result_.rows.size()) {
@@ -777,7 +784,7 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         }
     } else {
         for (const auto& col : node.columns) {
-            result_.columns.push_back(col->column);
+            result_.columns.push_back(col->alias.empty() ? col->column : col->alias);
         }
         for (auto& pr : rows) {
             const auto& src = pr.second;
@@ -800,6 +807,11 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
 
     if (node.distinct) {
         dedupeRows(result_.rows);
+    }
+    if (node.offset > 0) {
+        std::size_t off = static_cast<std::size_t>(node.offset);
+        if (off >= result_.rows.size()) result_.rows.clear();
+        else result_.rows.erase(result_.rows.begin(), result_.rows.begin() + off);
     }
     if (node.hasLimit) {
         std::size_t lim = node.limit < 0 ? 0 : static_cast<std::size_t>(node.limit);

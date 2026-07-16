@@ -88,6 +88,7 @@ class ColumnRef : public Expression {
 public:
     std::string table;
     std::string column;
+    std::string alias;
 
     ExpressionPtr computed;
 
@@ -173,6 +174,7 @@ public:
     bool star = false;
     bool distinct = false;
     std::unique_ptr<ColumnRef> argument;
+    std::string alias;
 
     void accept(ASTVisitor& visitor) override;
 };
@@ -243,6 +245,7 @@ public:
     bool distinct = false;
     std::vector<std::unique_ptr<ColumnRef>> columns;
     std::string table;
+    std::string tableAlias;
     ExpressionPtr where;
 
     struct OrderKey {
@@ -253,6 +256,7 @@ public:
 
     bool hasLimit = false;
     long long limit = 0;
+    long long offset = 0;
 
     std::vector<std::unique_ptr<FunctionExpr>> aggregates;
     std::vector<std::unique_ptr<ColumnRef>> groupBy;
@@ -260,6 +264,7 @@ public:
 
     enum class JoinKind { Inner, Left, Cross };
     std::string joinTable;
+    std::string joinTableAlias;
     ExpressionPtr joinOn;
     int joinTableId = -1;
     JoinKind joinType = JoinKind::Inner;

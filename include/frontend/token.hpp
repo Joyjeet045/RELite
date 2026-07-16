@@ -36,6 +36,7 @@ enum class TokenType {
     GROUP,
     HAVING,
     LIMIT,
+    OFFSET,
     AS,
     ASC,
     DESC,

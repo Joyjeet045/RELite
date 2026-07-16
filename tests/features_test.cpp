@@ -110,6 +110,24 @@ void run() {
     h.run("PUT INTO acct (id) VALUES (7);");
     assert(near(h.run("FETCH bal FROM acct WHEN id = 7;").rows[0][0].doubleValue, 2.5));
 
+    /* Column aliases (AS) rename output headers. */
+    auto al = h.run("FETCH cid AS ident, label AS tag FROM cat SORT BY cid;");
+    assert(al.columns.size() == 2 && al.columns[0] == "ident" && al.columns[1] == "tag");
+
+    /* TAKE ... SKIP applies an offset before the limit. */
+    h.run("BUILD RELATION nums (n INT);");
+    h.run("PUT INTO nums VALUES (1),(2),(3),(4),(5);");
+    auto off = h.run("FETCH n FROM nums SORT BY n TAKE 2 SKIP 1;");
+    assert(off.rows.size() == 2 && off.rows[0][0].intValue == 2 &&
+           off.rows[1][0].intValue == 3);
+
+    /* Table aliases enable an aliased self-join. */
+    auto sj = h.run(
+        "FETCH e.label, d.label AS other FROM cat e LINK cat d "
+        "ON e.cid = d.cid SORT BY e.cid;");
+    assert(sj.columns[1] == "other" && sj.rows.size() == 2 &&
+           sj.rows[0][0].textValue == sj.rows[0][1].textValue);
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

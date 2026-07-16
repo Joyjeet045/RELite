@@ -46,9 +46,12 @@ public:
 private:
     Catalog& catalog_;
     const TableSchema* currentTable_ = nullptr;
+    std::string currentAlias_;
 
     const TableSchema* leftTable_ = nullptr;
     const TableSchema* rightTable_ = nullptr;
+    std::string leftAlias_;
+    std::string rightAlias_;
     int leftColumnCount_ = 0;
     bool joinMode_ = false;
 

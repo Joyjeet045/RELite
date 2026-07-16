@@ -95,7 +95,8 @@ void SemanticAnalyzer::visit(parser::ColumnRef& node) {
     }
     if (joinMode_) {
         if (!node.table.empty()) {
-            if (node.table == leftTable_->name) {
+            if (node.table == leftTable_->name ||
+                (!leftAlias_.empty() && node.table == leftAlias_)) {
                 int idx = leftTable_->columnIndex(node.column);
                 if (idx < 0) throw SemanticError("unknown column '" + node.column +
                                                  "' in table '" + leftTable_->name + "'");
@@ -103,7 +104,8 @@ void SemanticAnalyzer::visit(parser::ColumnRef& node) {
                 node.resolvedType = leftTable_->columns[idx].type;
                 return;
             }
-            if (node.table == rightTable_->name) {
+            if (node.table == rightTable_->name ||
+                (!rightAlias_.empty() && node.table == rightAlias_)) {
                 int idx = rightTable_->columnIndex(node.column);
                 if (idx < 0) throw SemanticError("unknown column '" + node.column +
                                                  "' in table '" + rightTable_->name + "'");
@@ -135,7 +137,8 @@ void SemanticAnalyzer::visit(parser::ColumnRef& node) {
         throw SemanticError("column reference '" + node.column +
                             "' has no table in scope");
     }
-    if (!node.table.empty() && node.table != currentTable_->name) {
+    if (!node.table.empty() && node.table != currentTable_->name &&
+        node.table != currentAlias_) {
         throw SemanticError("unknown table qualifier '" + node.table +
                             "' (expected '" + currentTable_->name + "')");
     }
@@ -453,6 +456,8 @@ void SemanticAnalyzer::visit(parser::SelectStatement& node) {
         joinMode_ = true;
         leftTable_ = left;
         rightTable_ = right;
+        leftAlias_ = node.tableAlias;
+        rightAlias_ = node.joinTableAlias;
         leftColumnCount_ = static_cast<int>(left->columns.size());
         if (!node.selectStar) {
             for (auto& col : node.columns) col->accept(*this);
@@ -473,6 +478,8 @@ void SemanticAnalyzer::visit(parser::SelectStatement& node) {
         joinMode_ = false;
         leftTable_ = nullptr;
         rightTable_ = nullptr;
+        leftAlias_.clear();
+        rightAlias_.clear();
         return;
     }
 
@@ -481,6 +488,7 @@ void SemanticAnalyzer::visit(parser::SelectStatement& node) {
         throw SemanticError("unknown table '" + node.table + "'");
     }
     currentTable_ = table;
+    currentAlias_ = node.tableAlias;
     node.tableId = table->tableId;
 
     if (!node.selectStar) {
@@ -508,6 +516,7 @@ void SemanticAnalyzer::visit(parser::SelectStatement& node) {
     }
 
     currentTable_ = nullptr;
+    currentAlias_.clear();
 }
 
 void SemanticAnalyzer::visit(parser::DeleteStatement& node) {

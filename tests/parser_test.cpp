@@ -129,7 +129,7 @@ void testSyntaxErrors() {
     expectParseError("BUILD RELATION t (id);");
     expectParseError("PUT INTO t VALUES 1;");
     expectParseError("FETCH * FROM t WHEN;");
-    expectParseError("FETCH * FROM t extra;");
+    expectParseError("FETCH * FROM t extra junk;");
     expectParseError("");
 }
 

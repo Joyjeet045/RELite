@@ -60,6 +60,7 @@ private:
 
     ColumnDefinition parseColumnDefinition();
     std::unique_ptr<ColumnRef> parseColumnRef();
+    std::string parseOptionalAlias();
     std::unique_ptr<SelectStatement> parseSubquery();
     ExpressionPtr parseLiteral();
 

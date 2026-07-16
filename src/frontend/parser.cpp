@@ -342,38 +342,49 @@ ASTNodePtr Parser::parseSelect() {
                     fn->argument = parseColumnRef();
                 }
                 consume(TokenType::RPAREN, "')'");
+                if (match(TokenType::AS)) {
+                    fn->alias = consume(TokenType::IDENTIFIER, "alias").lexeme;
+                }
                 stmt->aggregates.push_back(std::move(fn));
             } else {
                 ExpressionPtr e = parseAdditive();
                 Expression* raw = e.release();
+                std::unique_ptr<ColumnRef> item;
                 if (auto* cr = dynamic_cast<ColumnRef*>(raw)) {
-                    stmt->columns.push_back(std::unique_ptr<ColumnRef>(cr));
+                    item = std::unique_ptr<ColumnRef>(cr);
                 } else {
-                    auto col = std::make_unique<ColumnRef>();
-                    col->computed = ExpressionPtr(raw);
-                    col->column = expressionToString(*col->computed);
-                    stmt->columns.push_back(std::move(col));
+                    item = std::make_unique<ColumnRef>();
+                    item->computed = ExpressionPtr(raw);
+                    item->column = expressionToString(*item->computed);
                 }
+                if (match(TokenType::AS)) {
+                    item->alias = consume(TokenType::IDENTIFIER, "alias").lexeme;
+                }
+                stmt->columns.push_back(std::move(item));
             }
         } while (match(TokenType::COMMA));
     }
 
     consume(TokenType::FROM, "FROM");
     stmt->table = consume(TokenType::IDENTIFIER, "table name").lexeme;
+    stmt->tableAlias = parseOptionalAlias();
 
     if (match(TokenType::LEFT)) {
         consume(TokenType::JOIN, "LINK");
         stmt->joinType = SelectStatement::JoinKind::Left;
         stmt->joinTable = consume(TokenType::IDENTIFIER, "table name").lexeme;
+        stmt->joinTableAlias = parseOptionalAlias();
         consume(TokenType::ON, "ON");
         stmt->joinOn = parseExpression();
     } else if (match(TokenType::CROSS)) {
         consume(TokenType::JOIN, "LINK");
         stmt->joinType = SelectStatement::JoinKind::Cross;
         stmt->joinTable = consume(TokenType::IDENTIFIER, "table name").lexeme;
+        stmt->joinTableAlias = parseOptionalAlias();
     } else if (match(TokenType::JOIN)) {
         stmt->joinType = SelectStatement::JoinKind::Inner;
         stmt->joinTable = consume(TokenType::IDENTIFIER, "table name").lexeme;
+        stmt->joinTableAlias = parseOptionalAlias();
         consume(TokenType::ON, "ON");
         stmt->joinOn = parseExpression();
     }
@@ -407,6 +418,10 @@ ASTNodePtr Parser::parseSelect() {
         const Token& n = consume(TokenType::INTEGER_LITERAL, "LIMIT count");
         stmt->hasLimit = true;
         stmt->limit = toInt64(n);
+    }
+    if (match(TokenType::OFFSET)) {
+        const Token& m = consume(TokenType::INTEGER_LITERAL, "SKIP count");
+        stmt->offset = toInt64(m);
     }
     return stmt;
 }
@@ -512,6 +527,16 @@ std::unique_ptr<ColumnRef> Parser::parseColumnRef() {
         ref->column = std::move(first);
     }
     return ref;
+}
+
+std::string Parser::parseOptionalAlias() {
+    if (match(TokenType::AS)) {
+        return consume(TokenType::IDENTIFIER, "alias").lexeme;
+    }
+    if (check(TokenType::IDENTIFIER)) {
+        return advance().lexeme;
+    }
+    return "";
 }
 
 ExpressionPtr Parser::parseLiteral() {

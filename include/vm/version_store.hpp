@@ -39,6 +39,14 @@ public:
 
     std::vector<std::string> snapshotAsOf(int tableId, std::uint64_t version) const;
 
+    /* Snapshot isolation: a transaction reads committed state as of the version
+     * captured at its start, overlaid with its own uncommitted (pending) writes. */
+    void beginSnapshot(int txnId);
+    void endSnapshot(int txnId);
+    bool snapshotVersionOf(int txnId, std::uint64_t& out) const;
+    std::vector<std::string> snapshotForTxn(int tableId,
+                                            std::uint64_t snapshotVersion) const;
+
     /* Seed a table's baseline from its current rows (used at load time when a
      * table has no persisted version history). */
     void seedBaseline(int tableId,
@@ -72,6 +80,7 @@ private:
     std::vector<Change> pending_;
     std::unordered_map<int, std::vector<BaseRow>> baseline_;
     std::unordered_set<int> knownTables_;
+    std::unordered_map<int, std::uint64_t> txnSnapshots_;
     std::uint64_t baselineVersion_ = 0;
     std::uint64_t version_ = 0;
     std::size_t maxChanges_ = 2000000;

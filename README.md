@@ -38,7 +38,7 @@ It runs as an interactive REPL and persists data across restarts.
   materialized on read)
 - Time travel: `FETCH ... FROM t AS OF <version>` reads a table as of a past
   logical version (MVCC snapshot); every committed write advances the version
-- Transactions: `START` / `SAVE` / `UNDO`
+- Transactions: `START` / `SAVE` / `UNDO` (snapshot-isolated reads)
 
 The full keyword vocabulary and SQL-to-Relite mapping are in
 [docs/grammar.txt](docs/grammar.txt).
@@ -54,6 +54,9 @@ The full keyword vocabulary and SQL-to-Relite mapping are in
 - Thread-safe B+ tree + Bloom filter indexes
 - Write-ahead log with `fsync` durability, group-commit, checkpointing, and crash recovery
 - Row-level lock manager (two-phase locking) and a transaction manager with undo
+- Snapshot isolation: a transaction reads a stable snapshot (committed state at
+  its start plus its own writes); single-table reads are served lock-free from
+  the version store
 - Multiversion store for snapshot reads / `AS OF` time travel, kept beside the
   heap; history is garbage-collected into per-table baselines and persisted
   across restarts
@@ -138,6 +141,6 @@ harness locally for your own baseline.
 
 ## Roadmap
 
-Larger items not yet implemented: ARIES-style redo + `pageLSN`, full isolation
-levels with predicate locking, a paged (disk-backed) B+ tree, and a cost-based
-optimizer with merge join and external-sort spill.
+Larger items not yet implemented: ARIES-style redo + `pageLSN`, serializable
+isolation with predicate locking, a paged (disk-backed) B+ tree, and a
+cost-based optimizer with merge join and external-sort spill.

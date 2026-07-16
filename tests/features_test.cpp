@@ -351,6 +351,38 @@ void run() {
         assert(ga1.rows.size() == 2 && ga1.rows[0][1].intValue == 10);
     }
 
+    /* Snapshot isolation: a reader transaction sees a stable snapshot even after
+     * another transaction commits a change; its own writes remain visible. */
+    {
+        int txnCur = 0;
+        auto runTxn = [&](const std::string& sql) {
+            parser::Lexer lexer(sql);
+            parser::Parser parser(lexer.tokenize());
+            auto stmt = parser.parseStatement();
+            semantic::SemanticAnalyzer analyzer(semantic::Catalog::instance());
+            analyzer.analyze(*stmt);
+            vm::ExecutorEngine engine(h.se, semantic::Catalog::instance(), &h.tm,
+                                      &txnCur);
+            return engine.run(*stmt);
+        };
+
+        h.run("BUILD RELATION si (id INT, bal INT);");
+        h.run("PUT INTO si VALUES (1,100);");
+
+        runTxn("START;");
+        auto r1 = runTxn("FETCH bal FROM si WHEN id = 1;");
+        assert(r1.rows.size() == 1 && r1.rows[0][0].intValue == 100);
+
+        h.run("MODIFY si SET bal = 500 WHEN id = 1;");
+
+        auto r2 = runTxn("FETCH bal FROM si WHEN id = 1;");
+        assert(r2.rows.size() == 1 && r2.rows[0][0].intValue == 100);
+
+        runTxn("SAVE;");
+        auto r3 = h.run("FETCH bal FROM si WHEN id = 1;");
+        assert(r3.rows.size() == 1 && r3.rows[0][0].intValue == 500);
+    }
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

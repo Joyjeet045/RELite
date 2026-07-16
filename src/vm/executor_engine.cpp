@@ -248,6 +248,21 @@ std::vector<std::pair<RecordID, std::vector<Value>>> ExecutorEngine::gatherBaseR
 std::vector<std::pair<RecordID, std::vector<Value>>> ExecutorEngine::sourceRows(
     parser::SelectStatement& node, const Schema& schema, parser::Expression* where) {
     if (!node.asOf) {
+        if (txnActive()) {
+            const semantic::TableSchema* ts = catalog_.getTableById(node.tableId);
+            std::uint64_t snap = 0;
+            if ((ts == nullptr || !ts->isView) &&
+                storage_.versions().snapshotVersionOf(*currentTxn_, snap)) {
+                std::vector<std::pair<RecordID, std::vector<Value>>> rows;
+                for (std::string& bytes :
+                     storage_.versions().snapshotForTxn(node.tableId, snap)) {
+                    Tuple t = Tuple::deserialize(bytes, schema);
+                    if (where != nullptr && !predicateTrue(*where, t)) continue;
+                    rows.emplace_back(RecordID{}, t.values());
+                }
+                return rows;
+            }
+        }
         return gatherBaseRows(node.tableId, schema, where);
     }
     std::vector<std::pair<RecordID, std::vector<Value>>> rows;
@@ -1993,6 +2008,7 @@ void ExecutorEngine::visit(parser::TransactionStatement& node) {
                 result_.message = "WARNING: already in a transaction";
             } else {
                 *currentTxn_ = txnMgr_->begin();
+                storage_.versions().beginSnapshot(*currentTxn_);
                 result_.message = "START";
             }
             break;
@@ -2000,9 +2016,11 @@ void ExecutorEngine::visit(parser::TransactionStatement& node) {
             if (*currentTxn_ == 0) {
                 result_.message = "WARNING: no transaction in progress";
             } else {
-                txnMgr_->commit(*currentTxn_);
+                int tid = *currentTxn_;
+                txnMgr_->commit(tid);
                 *currentTxn_ = 0;
                 storage_.versions().commitPending();
+                storage_.versions().endSnapshot(tid);
                 result_.message = "SAVE";
             }
             break;
@@ -2010,9 +2028,11 @@ void ExecutorEngine::visit(parser::TransactionStatement& node) {
             if (*currentTxn_ == 0) {
                 result_.message = "WARNING: no transaction in progress";
             } else {
-                txnMgr_->rollback(*currentTxn_);
+                int tid = *currentTxn_;
+                txnMgr_->rollback(tid);
                 *currentTxn_ = 0;
                 storage_.versions().discardPending();
+                storage_.versions().endSnapshot(tid);
                 result_.message = "UNDO";
             }
             break;

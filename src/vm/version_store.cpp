@@ -100,6 +100,48 @@ std::vector<std::string> VersionStore::snapshotAsOf(int tableId,
     return out;
 }
 
+void VersionStore::beginSnapshot(int txnId) { txnSnapshots_[txnId] = version_; }
+
+void VersionStore::endSnapshot(int txnId) { txnSnapshots_.erase(txnId); }
+
+bool VersionStore::snapshotVersionOf(int txnId, std::uint64_t& out) const {
+    auto it = txnSnapshots_.find(txnId);
+    if (it == txnSnapshots_.end()) return false;
+    out = it->second;
+    return true;
+}
+
+std::vector<std::string> VersionStore::snapshotForTxn(
+    int tableId, std::uint64_t snapshotVersion) const {
+    if (snapshotVersion < baselineVersion_) snapshotVersion = baselineVersion_;
+    std::vector<BaseRow> rows = reconstruct(tableId, snapshotVersion);
+
+    std::unordered_map<RecordID, std::size_t> pos;
+    std::vector<bool> live(rows.size(), true);
+    for (std::size_t i = 0; i < rows.size(); ++i) pos[rows[i].rid] = i;
+    for (const Change& c : pending_) {
+        if (c.tableId != tableId) continue;
+        auto found = pos.find(c.rid);
+        if (c.isDelete) {
+            if (found != pos.end()) live[found->second] = false;
+        } else if (found != pos.end()) {
+            rows[found->second].bytes = c.bytes;
+            live[found->second] = true;
+        } else {
+            pos[c.rid] = rows.size();
+            rows.push_back({c.rid, c.bytes});
+            live.push_back(true);
+        }
+    }
+
+    std::vector<std::string> out;
+    out.reserve(rows.size());
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (live[i]) out.push_back(std::move(rows[i].bytes));
+    }
+    return out;
+}
+
 void VersionStore::gc(std::uint64_t horizon) {
     if (horizon > version_) horizon = version_;
     if (horizon <= baselineVersion_) return;

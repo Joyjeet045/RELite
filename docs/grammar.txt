@@ -257,6 +257,9 @@ Notes / intentional limitations
     into per-table baselines (AS OF before the GC horizon is clamped to the
     baseline) and is persisted across restarts. Time travel covers a single
     table (no joins).
+  * Between START and SAVE/UNDO a transaction reads a snapshot: single-table
+    FETCHes see the committed state as of START plus the transaction's own
+    writes, so a change another transaction commits meanwhile stays invisible.
   * Subqueries appear as IN (FETCH ...), EXISTS (FETCH ...), or a parenthesized
     scalar (FETCH ...), including inside MODIFY/REMOVE and the FETCH list. A
     subquery may be correlated: when its WHEN references a column from the

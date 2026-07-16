@@ -161,7 +161,7 @@ ASTNodePtr Parser::parseStatement() {
     switch (t.type) {
         case TokenType::CREATE: stmt = parseCreate(); break;
         case TokenType::INSERT: stmt = parseInsert(); break;
-        case TokenType::SELECT: stmt = parseSelect(); break;
+        case TokenType::SELECT: stmt = parseSelectStatement(); break;
         case TokenType::EXPLAIN: {
             advance();
             stmt = parseSelect();
@@ -318,6 +318,13 @@ ASTNodePtr Parser::parseInsert() {
         consume(TokenType::RPAREN, "')'");
     }
 
+    if (check(TokenType::SELECT)) {
+        auto sel = parseSelect();
+        stmt->select = std::unique_ptr<SelectStatement>(
+            dynamic_cast<SelectStatement*>(sel.release()));
+        return stmt;
+    }
+
     consume(TokenType::VALUES, "VALUES");
     do {
         consume(TokenType::LPAREN, "'('");
@@ -330,6 +337,33 @@ ASTNodePtr Parser::parseInsert() {
     } while (match(TokenType::COMMA));
 
     return stmt;
+}
+
+ASTNodePtr Parser::parseSelectStatement() {
+    ASTNodePtr node = parseSelect();
+    while (check(TokenType::UNION) || check(TokenType::INTERSECT) ||
+           check(TokenType::EXCEPT)) {
+        auto setop = std::make_unique<SetOpStatement>();
+        if (match(TokenType::UNION)) {
+            setop->op = SetOpStatement::Op::Union;
+            setop->all = match(TokenType::ALL);
+        } else if (match(TokenType::INTERSECT)) {
+            setop->op = SetOpStatement::Op::Intersect;
+        } else {
+            consume(TokenType::EXCEPT, "EXCEPT");
+            setop->op = SetOpStatement::Op::Except;
+        }
+        ASTNodePtr rightNode = parseSelect();
+        auto* rsel = dynamic_cast<SelectStatement*>(rightNode.get());
+        if (rsel == nullptr) {
+            error(peek(), "expected FETCH after a set operator");
+        }
+        rightNode.release();
+        setop->right = std::unique_ptr<SelectStatement>(rsel);
+        setop->left = std::move(node);
+        node = std::move(setop);
+    }
+    return node;
 }
 
 ASTNodePtr Parser::parseSelect() {

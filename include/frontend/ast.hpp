@@ -255,6 +255,7 @@ public:
     std::string table;
     std::vector<std::string> columns;
     std::vector<std::vector<ExpressionPtr>> rows;
+    std::unique_ptr<SelectStatement> select;
 
     int tableId = -1;
 
@@ -351,6 +352,17 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class SetOpStatement : public ASTNode {
+public:
+    enum class Op { Union, Intersect, Except };
+    Op op = Op::Union;
+    bool all = false;
+    ASTNodePtr left;
+    std::unique_ptr<SelectStatement> right;
+
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ASTVisitor {
 public:
     virtual ~ASTVisitor() = default;
@@ -379,6 +391,7 @@ public:
     virtual void visit(DropStatement& node) = 0;
     virtual void visit(AlterStatement& node) = 0;
     virtual void visit(TransactionStatement& node) = 0;
+    virtual void visit(SetOpStatement& node) = 0;
 };
 
 }

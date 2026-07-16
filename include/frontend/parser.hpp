@@ -52,6 +52,7 @@ private:
     ASTNodePtr parseCreate();
     ASTNodePtr parseInsert();
     ASTNodePtr parseSelect();
+    ASTNodePtr parseSelectStatement();
     ASTNodePtr parseDelete();
     ASTNodePtr parseUpdate();
     ASTNodePtr parseDrop();

@@ -52,6 +52,10 @@ enum class TokenType {
     FULL,
     CROSS,
     DISTINCT,
+    UNION,
+    INTERSECT,
+    EXCEPT,
+    ALL,
 
     IS,
     IN,

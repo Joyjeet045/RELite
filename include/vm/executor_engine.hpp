@@ -31,6 +31,7 @@ public:
     void visit(parser::DropStatement& node) override;
     void visit(parser::AlterStatement& node) override;
     void visit(parser::TransactionStatement& node) override;
+    void visit(parser::SetOpStatement& node) override;
 
     void visit(parser::LiteralExpr&) override {}
     void visit(parser::ColumnRef&) override {}

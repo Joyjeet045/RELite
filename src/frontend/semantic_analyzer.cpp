@@ -486,6 +486,28 @@ void SemanticAnalyzer::visit(parser::InsertStatement& node) {
         }
     }
 
+    if (node.select) {
+        node.select->accept(*this);
+        std::size_t selCols;
+        if (node.select->selectStar) {
+            const TableSchema* st = catalog_.getTable(node.select->table);
+            selCols = st ? st->columns.size() : 0;
+            if (!node.select->joinTable.empty()) {
+                const TableSchema* jt = catalog_.getTable(node.select->joinTable);
+                if (jt) selCols += jt->columns.size();
+            }
+        } else {
+            selCols = node.select->columns.size() + node.select->aggregates.size();
+        }
+        if (selCols != targets.size()) {
+            throw SemanticError("INSERT ... FETCH yields " + std::to_string(selCols) +
+                                " column(s) but " + std::to_string(targets.size()) +
+                                " target column(s)");
+        }
+        currentTable_ = nullptr;
+        return;
+    }
+
     for (auto& row : node.rows) {
         if (row.size() != targets.size()) {
             throw SemanticError("INSERT has " + std::to_string(row.size()) +
@@ -653,6 +675,11 @@ void SemanticAnalyzer::visit(parser::DropStatement& node) {
 }
 
 void SemanticAnalyzer::visit(parser::TransactionStatement&) {}
+
+void SemanticAnalyzer::visit(parser::SetOpStatement& node) {
+    node.left->accept(*this);
+    node.right->accept(*this);
+}
 
 void SemanticAnalyzer::visit(parser::AlterStatement& node) {
     const TableSchema* table = catalog_.getTable(node.table);

@@ -44,6 +44,7 @@ public:
     void visit(parser::DropStatement& node) override;
     void visit(parser::AlterStatement& node) override;
     void visit(parser::TransactionStatement& node) override;
+    void visit(parser::SetOpStatement& node) override;
 
 private:
     Catalog& catalog_;

@@ -157,5 +157,6 @@ void UpdateStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void DropStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AlterStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void TransactionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void SetOpStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 
 }

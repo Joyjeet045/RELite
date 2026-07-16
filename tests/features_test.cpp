@@ -167,6 +167,23 @@ void run() {
     auto ex = h.run("EXPLAIN FETCH x FROM ra WHEN id = 1;");
     assert(ex.columns.size() == 1 && ex.columns[0] == "plan" && !ex.rows.empty());
 
+    /* Set operations combine two queries. */
+    h.run("BUILD RELATION s1 (n INT);");
+    h.run("BUILD RELATION s2 (n INT);");
+    h.run("PUT INTO s1 VALUES (1),(2),(3);");
+    h.run("PUT INTO s2 VALUES (2),(3),(4);");
+    assert(h.run("FETCH n FROM s1 UNION FETCH n FROM s2;").rows.size() == 4);
+    assert(h.run("FETCH n FROM s1 UNION ALL FETCH n FROM s2;").rows.size() == 6);
+    auto inter = h.run("FETCH n FROM s1 INTERSECT FETCH n FROM s2 SORT BY n;");
+    assert(inter.rows.size() == 2 && inter.rows[0][0].intValue == 2);
+    auto exc = h.run("FETCH n FROM s1 EXCEPT FETCH n FROM s2;");
+    assert(exc.rows.size() == 1 && exc.rows[0][0].intValue == 1);
+
+    /* INSERT ... FETCH copies query results into a table. */
+    h.run("BUILD RELATION s3 (n INT);");
+    h.run("PUT INTO s3 FETCH n FROM s1 WHEN n > 1;");
+    assert(h.run("FETCH n FROM s3;").rows.size() == 2);
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

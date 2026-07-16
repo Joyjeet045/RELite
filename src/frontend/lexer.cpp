@@ -46,6 +46,8 @@ const std::unordered_map<std::string, TokenType>& keywordTable() {
         {"PRIMARY", TokenType::PRIMARY}, {"UNIQUE", TokenType::UNIQUE},
         {"DEFAULT", TokenType::DEFAULT}, {"CHECK", TokenType::CHECK},
         {"UNIQUEONLY", TokenType::DISTINCT},
+        {"UNION", TokenType::UNION},     {"INTERSECT", TokenType::INTERSECT},
+        {"EXCEPT", TokenType::EXCEPT},   {"ALL", TokenType::ALL},
         {"EXISTS", TokenType::EXISTS},
     };
     return table;
@@ -273,6 +275,10 @@ std::string_view tokenTypeName(TokenType type) {
         case TokenType::RIGHT: return "RIGHT";
         case TokenType::FULL: return "FULL";
         case TokenType::CROSS: return "CROSS";
+        case TokenType::UNION: return "UNION";
+        case TokenType::INTERSECT: return "INTERSECT";
+        case TokenType::EXCEPT: return "EXCEPT";
+        case TokenType::ALL: return "ALL";
         case TokenType::IS: return "IS";
         case TokenType::IN: return "IN";
         case TokenType::BETWEEN: return "BETWEEN";

@@ -533,12 +533,25 @@ void ExecutorEngine::visit(parser::InsertStatement& node) {
 
     std::vector<index::Index*> tableIndexes = storage_.indexes().forTable(node.tableId);
     const Tuple empty;
+    std::vector<std::vector<Value>> providedRows;
+    if (node.select) {
+        ResultSet sel = run(*node.select);
+        providedRows = std::move(sel.rows);
+    } else {
+        for (auto& row : node.rows) {
+            std::vector<Value> pv;
+            pv.reserve(row.size());
+            for (auto& e : row) pv.push_back(evalExpression(*e, empty));
+            providedRows.push_back(std::move(pv));
+        }
+    }
+    result_ = ResultSet{};
     int count = 0;
-    for (auto& row : node.rows) {
+    for (auto& provided : providedRows) {
         std::vector<Value> vals(ncols, Value::null());
         std::vector<bool> isSet(ncols, false);
-        for (std::size_t i = 0; i < row.size(); ++i) {
-            vals[targets[i]] = evalExpression(*row[i], empty);
+        for (std::size_t i = 0; i < provided.size() && i < targets.size(); ++i) {
+            vals[targets[i]] = provided[i];
             isSet[targets[i]] = true;
         }
         if (ts != nullptr) {
@@ -1121,6 +1134,46 @@ void ExecutorEngine::visit(parser::TransactionStatement& node) {
             }
             break;
     }
+}
+
+void ExecutorEngine::visit(parser::SetOpStatement& node) {
+    ResultSet left = run(*node.left);
+    ResultSet right = run(*node.right);
+    if (left.columns.size() != right.columns.size()) {
+        throw std::runtime_error("set operation requires matching column counts");
+    }
+
+    ResultSet out;
+    out.isQuery = true;
+    out.columns = left.columns;
+
+    auto rowKey = [](const std::vector<Value>& row) {
+        std::string k;
+        for (const auto& v : row) {
+            k += std::to_string(static_cast<int>(v.type)) + ':' + v.toString() + '\x1e';
+        }
+        return k;
+    };
+
+    if (node.op == parser::SetOpStatement::Op::Union) {
+        out.rows = std::move(left.rows);
+        for (auto& row : right.rows) out.rows.push_back(std::move(row));
+        if (!node.all) dedupeRows(out.rows);
+    } else {
+        std::unordered_set<std::string> rightKeys;
+        for (const auto& row : right.rows) rightKeys.insert(rowKey(row));
+        std::unordered_set<std::string> emitted;
+        const bool wantIntersect = node.op == parser::SetOpStatement::Op::Intersect;
+        for (auto& row : left.rows) {
+            std::string k = rowKey(row);
+            bool inRight = rightKeys.count(k) != 0;
+            if (inRight == wantIntersect && emitted.insert(k).second) {
+                out.rows.push_back(std::move(row));
+            }
+        }
+    }
+
+    result_ = std::move(out);
 }
 
 }

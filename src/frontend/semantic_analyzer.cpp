@@ -877,6 +877,20 @@ void SemanticAnalyzer::visit(parser::UpdateStatement& node) {
     currentTable_ = table;
     node.tableId = table->tableId;
 
+    if (!node.fromTable.empty()) {
+        const TableSchema* fromT = catalog_.getTable(node.fromTable);
+        if (fromT == nullptr) {
+            throw SemanticError("unknown table '" + node.fromTable + "'");
+        }
+        node.fromTableId = fromT->tableId;
+        leftTable_ = table;
+        rightTable_ = fromT;
+        leftAlias_.clear();
+        rightAlias_ = node.fromAlias;
+        leftColumnCount_ = static_cast<int>(table->columns.size());
+        joinMode_ = true;
+    }
+
     std::unordered_set<std::string> seen;
     for (std::size_t i = 0; i < node.targetColumns.size(); ++i) {
         const std::string& name = node.targetColumns[i];
@@ -898,6 +912,14 @@ void SemanticAnalyzer::visit(parser::UpdateStatement& node) {
     }
     if (node.where) {
         checkPredicate(*node.where);
+    }
+    if (joinMode_) {
+        joinMode_ = false;
+        leftTable_ = nullptr;
+        rightTable_ = nullptr;
+        leftAlias_.clear();
+        rightAlias_.clear();
+        leftColumnCount_ = 0;
     }
     for (auto& col : node.returning) col->accept(*this);
     currentTable_ = nullptr;

@@ -584,6 +584,27 @@ void run() {
         assert(one.rows.size() == 1 && one.rows[0][0].textValue == "y");
     }
 
+    /* MODIFY ... FROM: update a table using values from a joined table. */
+    {
+        h.run("BUILD RELATION prices (pid INT, price INT);");
+        h.run("BUILD RELATION adj (pid INT, delta INT, label TEXT);");
+        h.run("PUT INTO prices VALUES (1,100),(2,200),(3,300);");
+        h.run("PUT INTO adj VALUES (1,10,'a'),(2,25,'b');");
+        h.run("MODIFY prices SET price = price + adj.delta FROM adj "
+              "WHEN prices.pid = adj.pid;");
+        auto p = h.run("FETCH pid, price FROM prices SORT BY pid;");
+        assert(p.rows.size() == 3);
+        assert(p.rows[0][1].intValue == 110);
+        assert(p.rows[1][1].intValue == 225);
+        assert(p.rows[2][1].intValue == 300);
+
+        /* Aliased FROM with RETURNING. */
+        auto r = h.run("MODIFY prices SET price = a.delta FROM adj a "
+                       "WHEN prices.pid = a.pid AND a.label = 'b' RETURNING pid, price;");
+        assert(r.isQuery && r.rows.size() == 1 && r.rows[0][0].intValue == 2 &&
+               r.rows[0][1].intValue == 25);
+    }
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

@@ -367,10 +367,14 @@ public:
     std::vector<ExpressionPtr> values;
     ExpressionPtr where;
 
+    std::string fromTable;
+    std::string fromAlias;
+
     bool returningStar = false;
     std::vector<std::unique_ptr<ColumnRef>> returning;
 
     int tableId = -1;
+    int fromTableId = -1;
     std::vector<int> targetIndices;
 
     void accept(ASTVisitor& visitor) override;

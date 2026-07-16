@@ -2257,7 +2257,27 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
 
     std::vector<index::Index*> tableIndexes = storage_.indexes().forTable(node.tableId);
     std::vector<std::pair<RecordID, std::vector<Value>>> rows;
-    if (node.where && hasCorrelatedSubquery(node.where.get())) {
+    std::vector<std::vector<Value>> matchFrom;
+    const bool joinUpdate = !node.fromTable.empty();
+    if (joinUpdate) {
+        Schema fromSchema;
+        std::vector<std::string> fromNames;
+        loadSchema(node.fromTableId, fromSchema, fromNames);
+        auto fromRows = gatherRows(node.fromTableId, fromSchema, nullptr);
+        auto targetRows = gatherRows(node.tableId, schema, nullptr);
+        for (auto& tr : targetRows) {
+            for (auto& fr : fromRows) {
+                std::vector<Value> combined = tr.second;
+                combined.insert(combined.end(), fr.second.begin(), fr.second.end());
+                Tuple ct(std::move(combined));
+                if (!node.where || predicateTrue(*node.where, ct)) {
+                    rows.push_back(tr);
+                    matchFrom.push_back(fr.second);
+                    break;
+                }
+            }
+        }
+    } else if (node.where && hasCorrelatedSubquery(node.where.get())) {
         auto allRows = gatherRows(node.tableId, schema, nullptr);
         for (auto& pr : allRows) {
             bindCorrelated(node.where.get(), pr.second);
@@ -2271,14 +2291,27 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
     int count = 0;
     const bool wantReturn = node.returningStar || !node.returning.empty();
     std::vector<std::vector<Value>> returned;
+    std::size_t updIdx = 0;
     for (auto& [rid, row] : rows) {
         if (txnActive()) lockOrThrow(rid, /*exclusive=*/true);
         Tuple oldTup(row);
         std::vector<Value> newVals = row;
-        for (std::size_t i = 0; i < node.targetIndices.size(); ++i) {
-            int ci = node.targetIndices[i];
-            newVals[ci] = evalExpression(*node.values[i], oldTup);
+        if (joinUpdate) {
+            std::vector<Value> combined = row;
+            combined.insert(combined.end(), matchFrom[updIdx].begin(),
+                            matchFrom[updIdx].end());
+            Tuple ct(std::move(combined));
+            for (std::size_t i = 0; i < node.targetIndices.size(); ++i) {
+                newVals[node.targetIndices[i]] =
+                    evalExpression(*node.values[i], ct);
+            }
+        } else {
+            for (std::size_t i = 0; i < node.targetIndices.size(); ++i) {
+                newVals[node.targetIndices[i]] =
+                    evalExpression(*node.values[i], oldTup);
+            }
         }
+        ++updIdx;
         Tuple newTup(newVals);
         if (ts != nullptr) {
             checkForeignKeys(*ts, newTup.values());

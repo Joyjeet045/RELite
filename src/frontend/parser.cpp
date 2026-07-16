@@ -684,6 +684,10 @@ ASTNodePtr Parser::parseUpdate() {
         stmt->targetColumns.push_back(std::move(col));
         stmt->values.push_back(std::move(val));
     } while (match(TokenType::COMMA));
+    if (match(TokenType::FROM)) {
+        stmt->fromTable = consume(TokenType::IDENTIFIER, "table name").lexeme;
+        stmt->fromAlias = parseOptionalAlias();
+    }
     if (match(TokenType::WHERE)) {
         stmt->where = parseExpression();
     }

@@ -78,15 +78,18 @@ bool Catalog::dropTable(const std::string& name) {
 }
 
 bool Catalog::createIndex(const std::string& indexName, const std::string& table,
-                          const std::string& column) {
+                          const std::vector<std::string>& columns) {
     if (indexes_.count(indexName) != 0) {
         return false;
     }
     const TableSchema* schema = getTable(table);
-    if (schema == nullptr || schema->columnIndex(column) < 0) {
+    if (schema == nullptr || columns.empty()) {
         return false;
     }
-    indexes_.emplace(indexName, std::make_pair(table, column));
+    for (const auto& c : columns) {
+        if (schema->columnIndex(c) < 0) return false;
+    }
+    indexes_.emplace(indexName, std::make_pair(table, columns));
     return true;
 }
 

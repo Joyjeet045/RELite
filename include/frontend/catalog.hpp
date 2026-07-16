@@ -66,7 +66,7 @@ public:
                        ForeignKey::Action onDelete = ForeignKey::Action::Restrict);
 
     bool createIndex(const std::string& indexName, const std::string& table,
-                     const std::string& column);
+                     const std::vector<std::string>& columns);
     bool hasIndex(const std::string& indexName) const;
     bool dropIndex(const std::string& indexName);
 
@@ -75,7 +75,7 @@ public:
     struct IndexRef {
         std::string name;
         std::string table;
-        std::string column;
+        std::vector<std::string> columns;
     };
     std::vector<IndexRef> allIndexes() const;
 
@@ -91,7 +91,7 @@ private:
     int nextTableId_ = 0;
     std::unordered_map<std::string, TableSchema> tables_;
     std::unordered_map<int, std::string> tableNamesById_;
-    std::unordered_map<std::string, std::pair<std::string, std::string>> indexes_;
+    std::unordered_map<std::string, std::pair<std::string, std::vector<std::string>>> indexes_;
 };
 
 }

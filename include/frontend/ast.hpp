@@ -246,10 +246,10 @@ class CreateIdxStatement : public ASTNode {
 public:
     std::string indexName;
     std::string table;
-    std::string column;
+    std::vector<std::string> columns;
 
     int tableId = -1;
-    int columnIndex = -1;
+    std::vector<int> columnIndices;
 
     void accept(ASTVisitor& visitor) override;
 };

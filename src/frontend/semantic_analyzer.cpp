@@ -454,17 +454,20 @@ void SemanticAnalyzer::visit(parser::CreateIdxStatement& node) {
     if (table == nullptr) {
         throw SemanticError("unknown table '" + node.table + "'");
     }
-    int idx = table->columnIndex(node.column);
-    if (idx < 0) {
-        throw SemanticError("unknown column '" + node.column + "' in table '" +
-                            node.table + "'");
+    node.columnIndices.clear();
+    for (const auto& colName : node.columns) {
+        int idx = table->columnIndex(colName);
+        if (idx < 0) {
+            throw SemanticError("unknown column '" + colName + "' in table '" +
+                                node.table + "'");
+        }
+        node.columnIndices.push_back(idx);
     }
     if (catalog_.hasIndex(node.indexName)) {
         throw SemanticError("index '" + node.indexName + "' already exists");
     }
-    catalog_.createIndex(node.indexName, node.table, node.column);
+    catalog_.createIndex(node.indexName, node.table, node.columns);
     node.tableId = table->tableId;
-    node.columnIndex = idx;
 }
 
 void SemanticAnalyzer::visit(parser::InsertStatement& node) {

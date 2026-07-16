@@ -217,7 +217,9 @@ ASTNodePtr Parser::parseCreate() {
         consume(TokenType::ON, "ON");
         stmt->table = consume(TokenType::IDENTIFIER, "table name").lexeme;
         consume(TokenType::LPAREN, "'('");
-        stmt->column = consume(TokenType::IDENTIFIER, "column name").lexeme;
+        do {
+            stmt->columns.push_back(consume(TokenType::IDENTIFIER, "column name").lexeme);
+        } while (match(TokenType::COMMA));
         consume(TokenType::RPAREN, "')'");
         return stmt;
     }

@@ -227,6 +227,21 @@ void run() {
     assert(near(h.run("FETCH amt * 2 AS x FROM ev WHEN id = 1;").rows[0][0].doubleValue,
                 39.98));
 
+    /* Composite index: equality on all columns is served by the index and
+       stays consistent across updates. */
+    h.run("BUILD RELATION cx (a INT, b INT, c TEXT);");
+    h.run("PUT INTO cx VALUES (1,10,'x'),(1,20,'y'),(2,10,'z');");
+    h.run("BUILD INDEX cxab ON cx (a, b);");
+    assert(h.run("FETCH c FROM cx WHEN a = 1 AND b = 20;").rows[0][0].textValue == "y");
+    h.run("MODIFY cx SET b = 99 WHEN a = 1 AND b = 20;");
+    assert(h.run("FETCH c FROM cx WHEN a = 1 AND b = 99;").rows.size() == 1);
+    assert(h.run("FETCH c FROM cx WHEN a = 1 AND b = 20;").rows.empty());
+    bool idxScan = false;
+    for (auto& r : h.run("EXPLAIN FETCH c FROM cx WHEN a = 1 AND b = 99;").rows) {
+        if (r[0].textValue.find("Index Scan") != std::string::npos) idxScan = true;
+    }
+    assert(idxScan);
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

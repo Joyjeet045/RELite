@@ -117,7 +117,8 @@ void testUnknownQualifierRejected() {
 void testCreateIndexBinds() {
     auto node = analyze("BUILD INDEX by_name ON friend (name);");
     auto* ci = dynamic_cast<CreateIdxStatement*>(node.get());
-    assert(ci != nullptr && ci->columnIndex == 1);
+    assert(ci != nullptr && ci->columnIndices.size() == 1 &&
+           ci->columnIndices[0] == 1);
     assert(Catalog::instance().hasIndex("by_name"));
 }
 

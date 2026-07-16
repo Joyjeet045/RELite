@@ -228,6 +228,49 @@ bool ExecutorEngine::indexCandidates(parser::Expression* where, int tableId,
     using namespace parser;
     if (where == nullptr) return false;
 
+    {
+        std::unordered_map<int, Value> eqs;
+        std::function<void(parser::Expression*)> collect = [&](parser::Expression* e) {
+            if (auto* land = dynamic_cast<LogicalExpr*>(e)) {
+                if (land->op == LogicalOp::And) {
+                    collect(land->left.get());
+                    collect(land->right.get());
+                }
+                return;
+            }
+            if (auto* bin = dynamic_cast<BinaryExpr*>(e)) {
+                if (bin->op != ComparisonOp::Eq) return;
+                auto* col = dynamic_cast<ColumnRef*>(bin->left.get());
+                auto* lit = dynamic_cast<LiteralExpr*>(bin->right.get());
+                if (col == nullptr || lit == nullptr) {
+                    col = dynamic_cast<ColumnRef*>(bin->right.get());
+                    lit = dynamic_cast<LiteralExpr*>(bin->left.get());
+                }
+                if (col == nullptr || lit == nullptr) return;
+                const Tuple none;
+                Value v = evalExpression(*lit, none);
+                if (!v.isNull()) eqs[col->columnIndex] = v;
+            }
+        };
+        collect(where);
+        if (!eqs.empty()) {
+            for (index::Index* idx : storage_.indexes().forTable(tableId)) {
+                if (!idx->isComposite()) continue;
+                std::vector<Value> keyVals;
+                bool covered = true;
+                for (int c : idx->columns) {
+                    auto it = eqs.find(c);
+                    if (it == eqs.end()) { covered = false; break; }
+                    keyVals.push_back(it->second);
+                }
+                if (covered) {
+                    rids = idx->lookup(idx->keyFromValues(keyVals));
+                    return true;
+                }
+            }
+        }
+    }
+
     if (auto* land = dynamic_cast<LogicalExpr*>(where)) {
         if (land->op == LogicalOp::And) {
             if (indexCandidates(land->left.get(), tableId, rids)) return true;
@@ -512,9 +555,10 @@ void ExecutorEngine::applyReferentialActions(const semantic::TableSchema& parent
                     std::string bytes = ctuple.serialize(cschema);
                     std::vector<std::pair<index::Index*, Value>> idxKeys;
                     for (index::Index* idx : cindexes) {
-                        if (idx->columnIndex < static_cast<int>(ctuple.size())) {
-                            idxKeys.emplace_back(idx, ctuple.at(idx->columnIndex));
-                            idx->remove(ctuple.at(idx->columnIndex), crid);
+                        if (idx->coversRow(ctuple.size())) {
+                            Value key = idx->keyOf(ctuple.values());
+                            idxKeys.emplace_back(idx, key);
+                            idx->remove(key, crid);
                         }
                     }
                     if (txnActive()) {
@@ -533,8 +577,8 @@ void ExecutorEngine::applyReferentialActions(const semantic::TableSchema& parent
                     Tuple newTup(nv);
                     if (txnActive()) lockOrThrow(crid, true);
                     for (index::Index* idx : cindexes) {
-                        if (idx->columnIndex < static_cast<int>(ctuple.size())) {
-                            idx->remove(ctuple.at(idx->columnIndex), crid);
+                        if (idx->coversRow(ctuple.size())) {
+                            idx->remove(idx->keyOf(ctuple.values()), crid);
                         }
                     }
                     std::string oldBytes = ctuple.serialize(cschema);
@@ -543,8 +587,8 @@ void ExecutorEngine::applyReferentialActions(const semantic::TableSchema& parent
                         storage_.tables().updateTuple(child->tableId, crid, newBytes);
                     if (txnActive()) lockOrThrow(nr, true);
                     for (index::Index* idx : cindexes) {
-                        if (idx->columnIndex < static_cast<int>(newTup.size())) {
-                            idx->add(newTup.at(idx->columnIndex), nr);
+                        if (idx->coversRow(newTup.size())) {
+                            idx->add(idx->keyOf(newTup.values()), nr);
                         }
                     }
                     if (txnActive()) {
@@ -554,9 +598,9 @@ void ExecutorEngine::applyReferentialActions(const semantic::TableSchema& parent
                         txnMgr_->logInsert(*currentTxn_, tid, nr, newBytes);
                         std::vector<std::pair<index::Index*, Value>> oldKeys, newKeys;
                         for (index::Index* idx : cindexes) {
-                            if (idx->columnIndex < static_cast<int>(ctuple.size())) {
-                                oldKeys.emplace_back(idx, ctuple.at(idx->columnIndex));
-                                newKeys.emplace_back(idx, newTup.at(idx->columnIndex));
+                            if (idx->coversRow(ctuple.size())) {
+                                oldKeys.emplace_back(idx, idx->keyOf(ctuple.values()));
+                                newKeys.emplace_back(idx, idx->keyOf(newTup.values()));
                             }
                         }
                         txnMgr_->registerUndo(
@@ -657,8 +701,9 @@ void ExecutorEngine::visit(parser::CreateStatement& node) {
             if (!(col.primaryKey || col.unique)) continue;
             std::string idxName = "__uq_" + ts->name + "_" + col.name;
             if (!catalog_.hasIndex(idxName)) {
-                catalog_.createIndex(idxName, ts->name, col.name);
-                storage_.indexes().create(idxName, node.tableId, static_cast<int>(i));
+                catalog_.createIndex(idxName, ts->name, {col.name});
+                storage_.indexes().create(idxName, node.tableId,
+                                          {static_cast<int>(i)});
             }
         }
     }
@@ -667,7 +712,7 @@ void ExecutorEngine::visit(parser::CreateStatement& node) {
 
 void ExecutorEngine::visit(parser::CreateIdxStatement& node) {
     index::Index* idx =
-        storage_.indexes().create(node.indexName, node.tableId, node.columnIndex);
+        storage_.indexes().create(node.indexName, node.tableId, node.columnIndices);
     if (idx != nullptr) {
         Schema schema;
         std::vector<std::string> names;
@@ -677,8 +722,8 @@ void ExecutorEngine::visit(parser::CreateIdxStatement& node) {
         Tuple t;
         RecordID rid;
         while (scan.next(t, rid)) {
-            if (node.columnIndex < static_cast<int>(t.size())) {
-                idx->add(t.at(node.columnIndex), rid);
+            if (idx->coversRow(t.size())) {
+                idx->add(idx->keyOf(t.values()), rid);
             }
         }
     }
@@ -764,8 +809,8 @@ void ExecutorEngine::visit(parser::InsertStatement& node) {
         std::string bytes = tup.serialize(schema);
         RecordID rid = storage_.tables().insertTuple(node.tableId, bytes);
         for (index::Index* idx : tableIndexes) {
-            if (idx->columnIndex < static_cast<int>(tup.size())) {
-                idx->add(tup.at(idx->columnIndex), rid);
+            if (idx->coversRow(tup.size())) {
+                idx->add(idx->keyOf(tup.values()), rid);
             }
         }
         if (txnActive()) {
@@ -774,8 +819,8 @@ void ExecutorEngine::visit(parser::InsertStatement& node) {
             int tid = node.tableId;
             std::vector<std::pair<index::Index*, Value>> idxKeys;
             for (index::Index* idx : tableIndexes) {
-                if (idx->columnIndex < static_cast<int>(tup.size())) {
-                    idxKeys.emplace_back(idx, tup.at(idx->columnIndex));
+                if (idx->coversRow(tup.size())) {
+                    idxKeys.emplace_back(idx, idx->keyOf(tup.values()));
                 }
             }
             txnMgr_->logInsert(*currentTxn_, tid, rid, bytes);
@@ -1146,8 +1191,8 @@ void ExecutorEngine::visit(parser::DeleteStatement& node) {
     for (auto& [vrid, vtuple] : victims) {
         if (txnActive()) lockOrThrow(vrid, /*exclusive=*/true);
         for (index::Index* idx : tableIndexes) {
-            if (idx->columnIndex < static_cast<int>(vtuple.size())) {
-                idx->remove(vtuple.at(idx->columnIndex), vrid);
+            if (idx->coversRow(vtuple.size())) {
+                idx->remove(idx->keyOf(vtuple.values()), vrid);
             }
         }
         if (txnActive()) {
@@ -1156,8 +1201,8 @@ void ExecutorEngine::visit(parser::DeleteStatement& node) {
             std::string bytes = vtuple.serialize(schema);
             std::vector<std::pair<index::Index*, Value>> idxKeys;
             for (index::Index* idx : tableIndexes) {
-                if (idx->columnIndex < static_cast<int>(vtuple.size())) {
-                    idxKeys.emplace_back(idx, vtuple.at(idx->columnIndex));
+                if (idx->coversRow(vtuple.size())) {
+                    idxKeys.emplace_back(idx, idx->keyOf(vtuple.values()));
                 }
             }
             txnMgr_->logDelete(*currentTxn_, tid, vrid, bytes);
@@ -1199,15 +1244,15 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
         std::string newBytes = newTup.serialize(schema);
 
         for (index::Index* idx : tableIndexes) {
-            if (idx->columnIndex < static_cast<int>(oldTup.size())) {
-                idx->remove(oldTup.at(idx->columnIndex), rid);
+            if (idx->coversRow(oldTup.size())) {
+                idx->remove(idx->keyOf(oldTup.values()), rid);
             }
         }
         RecordID nr = storage_.tables().updateTuple(node.tableId, rid, newBytes);
         if (txnActive()) lockOrThrow(nr, /*exclusive=*/true);
         for (index::Index* idx : tableIndexes) {
-            if (idx->columnIndex < static_cast<int>(newTup.size())) {
-                idx->add(newTup.at(idx->columnIndex), nr);
+            if (idx->coversRow(newTup.size())) {
+                idx->add(idx->keyOf(newTup.values()), nr);
             }
         }
         if (txnActive()) {
@@ -1217,9 +1262,9 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
             txnMgr_->logInsert(*currentTxn_, tid, nr, newBytes);
             std::vector<std::pair<index::Index*, Value>> oldKeys, newKeys;
             for (index::Index* idx : tableIndexes) {
-                if (idx->columnIndex < static_cast<int>(oldTup.size())) {
-                    oldKeys.emplace_back(idx, oldTup.at(idx->columnIndex));
-                    newKeys.emplace_back(idx, newTup.at(idx->columnIndex));
+                if (idx->coversRow(oldTup.size())) {
+                    oldKeys.emplace_back(idx, idx->keyOf(oldTup.values()));
+                    newKeys.emplace_back(idx, idx->keyOf(newTup.values()));
                 }
             }
             txnMgr_->registerUndo(*currentTxn_, [se, tid, nr, oldBytes, oldKeys, newKeys] {

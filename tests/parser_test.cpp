@@ -34,7 +34,7 @@ void testCreateIndex() {
     assert(ci != nullptr);
     assert(ci->indexName == "by_name");
     assert(ci->table == "friend");
-    assert(ci->column == "name");
+    assert(ci->columns.size() == 1 && ci->columns[0] == "name");
 }
 
 void testInsertMultiRow() {

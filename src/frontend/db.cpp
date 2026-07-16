@@ -157,7 +157,7 @@ void DB::saveCatalog() {
         out.precision(17);
 
         auto& cat = catalog_;
-        out << "RELITE6\n";
+        out << "RELITE7\n";
         out << cat.nextTableId() << "\n";
 
         auto tables = cat.allTables();
@@ -196,7 +196,9 @@ void DB::saveCatalog() {
         auto idxs = cat.allIndexes();
         out << idxs.size() << "\n";
         for (const auto& ix : idxs) {
-            out << ix.name << " " << ix.table << " " << ix.column << "\n";
+            out << ix.name << " " << ix.table << " " << ix.columns.size();
+            for (const auto& c : ix.columns) out << " " << c;
+            out << "\n";
         }
         out.flush();
     }
@@ -223,6 +225,7 @@ void DB::loadCatalog() {
     else if (magic == "RELITE4") ver = 4;
     else if (magic == "RELITE5") ver = 5;
     else if (magic == "RELITE6") ver = 6;
+    else if (magic == "RELITE7") ver = 7;
     else return;
 
     auto& cat = catalog_;
@@ -319,9 +322,23 @@ void DB::loadCatalog() {
     int nidx = 0;
     in >> nidx;
     for (int i = 0; i < nidx; ++i) {
-        std::string name, table, column;
-        in >> name >> table >> column;
-        cat.createIndex(name, table, column);
+        std::string name, table;
+        in >> name >> table;
+        std::vector<std::string> cols;
+        if (ver >= 7) {
+            int nc = 0;
+            in >> nc;
+            for (int k = 0; k < nc; ++k) {
+                std::string c;
+                in >> c;
+                cols.push_back(c);
+            }
+        } else {
+            std::string c;
+            in >> c;
+            cols.push_back(c);
+        }
+        cat.createIndex(name, table, cols);
     }
 }
 
@@ -330,7 +347,14 @@ void DB::rebuildIndexes() {
     for (const auto& ix : cat.allIndexes()) {
         const semantic::TableSchema* ts = cat.getTable(ix.table);
         if (ts == nullptr) continue;
-        int colIdx = ts->columnIndex(ix.column);
+        std::vector<int> colIdx;
+        bool ok = true;
+        for (const auto& c : ix.columns) {
+            int ci = ts->columnIndex(c);
+            if (ci < 0) { ok = false; break; }
+            colIdx.push_back(ci);
+        }
+        if (!ok || colIdx.empty()) continue;
         index::Index* idx = storage_->indexes().create(ix.name, ts->tableId, colIdx);
         if (idx == nullptr) continue;
         vm::Schema schema;
@@ -338,8 +362,8 @@ void DB::rebuildIndexes() {
         for (vm::TableIterator it(&storage_->tables(), ts->tableId); it.valid();
              it.next()) {
             vm::Tuple tup = vm::Tuple::deserialize(it.bytes(), schema);
-            if (colIdx >= 0 && colIdx < static_cast<int>(tup.size())) {
-                idx->add(tup.at(colIdx), it.rid());
+            if (idx->coversRow(tup.size())) {
+                idx->add(idx->keyOf(tup.values()), it.rid());
             }
         }
     }

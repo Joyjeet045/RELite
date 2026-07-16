@@ -455,6 +455,47 @@ void SemanticAnalyzer::visit(parser::CreateStatement& node) {
         throw SemanticError("table '" + node.table + "' already exists");
     }
 
+    if (node.asQuery) {
+        node.asQuery->accept(*this);
+        const parser::SelectStatement& q = *node.asQuery;
+        node.columns.clear();
+        auto addCol = [&](const std::string& name, DataType type, int vlen) {
+            parser::ColumnDefinition d;
+            d.name = name;
+            d.type = type;
+            d.varcharLength = vlen;
+            node.columns.push_back(std::move(d));
+        };
+        if (q.selectStar) {
+            const TableSchema* base = catalog_.getTable(q.table);
+            if (base) {
+                for (const auto& c : base->columns) addCol(c.name, c.type, c.varcharLength);
+            }
+            if (!q.joinTable.empty()) {
+                const TableSchema* jt = catalog_.getTable(q.joinTable);
+                if (jt) {
+                    for (const auto& c : jt->columns) addCol(c.name, c.type, c.varcharLength);
+                }
+            }
+        } else {
+            int anon = 0;
+            for (const auto& col : q.columns) {
+                std::string name = !col->alias.empty()
+                                       ? col->alias
+                                       : (!col->column.empty() ? col->column
+                                                               : "col" + std::to_string(anon++));
+                addCol(name, col->resolvedType.value_or(DataType::Text), 0);
+            }
+            for (const auto& fn : q.aggregates) {
+                addCol(!fn->alias.empty() ? fn->alias : fn->name,
+                       fn->resolvedType.value_or(DataType::Int), 0);
+            }
+        }
+        if (node.columns.empty()) {
+            throw SemanticError("BUILD RELATION AS produced no columns");
+        }
+    }
+
     std::unordered_set<std::string> seen;
     std::vector<ColumnSchema> columns;
     columns.reserve(node.columns.size());

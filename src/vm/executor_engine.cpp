@@ -1003,6 +1003,30 @@ void ExecutorEngine::visit(parser::CreateStatement& node) {
             }
         }
     }
+
+    if (node.asQuery) {
+        Schema schema;
+        std::vector<std::string> names;
+        loadSchema(node.tableId, schema, names);
+        ResultSet rs = run(*node.asQuery);
+        result_ = ResultSet{};
+        storage_.columns().clear();
+        std::vector<index::Index*> idxs = storage_.indexes().forTable(node.tableId);
+        long long inserted = 0;
+        for (auto& row : rs.rows) {
+            Tuple tup(row);
+            std::string bytes = tup.serialize(schema);
+            RecordID rid = storage_.tables().insertTuple(node.tableId, bytes);
+            for (index::Index* idx : idxs) {
+                if (idx->coversRow(tup.size())) idx->add(idx->keyOf(tup.values()), rid);
+            }
+            storage_.versions().stageInsert(node.tableId, rid, bytes);
+            ++inserted;
+        }
+        storage_.versions().commitPending();
+        result_.message = "BUILD RELATION AS (" + std::to_string(inserted) + " rows)";
+        return;
+    }
     result_.message = "BUILD RELATION";
 }
 

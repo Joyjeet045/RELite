@@ -460,6 +460,17 @@ void run() {
         assert(!semantic::Catalog::instance().hasTable("vv"));
     }
 
+    /* CTAS: BUILD RELATION t AS FETCH ... creates and populates from a query. */
+    {
+        h.run("BUILD RELATION ctas_src (id INT, v INT);");
+        h.run("PUT INTO ctas_src VALUES (1,10),(2,20),(3,30);");
+        h.run("BUILD RELATION ctas_dst AS FETCH id, v FROM ctas_src WHEN v > 10;");
+        assert(semantic::Catalog::instance().hasTable("ctas_dst"));
+        auto c = h.run("FETCH id, v FROM ctas_dst SORT BY id;");
+        assert(c.rows.size() == 2 && c.rows[0][0].intValue == 2 &&
+               c.rows[1][0].intValue == 3 && c.rows[1][1].intValue == 30);
+    }
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

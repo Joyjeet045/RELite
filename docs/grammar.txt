@@ -108,6 +108,7 @@ Statements
                  | txnStmt ) [ ";" ] ;
 
   buildStmt   := "BUILD" "RELATION" ident "(" columnDef { "," columnDef } ")"
+               | "BUILD" "RELATION" ident "AS" fetchStmt
                | "BUILD" "INDEX" ident "ON" ident "(" ident { "," ident } ")"
                | "BUILD" "VIEW" ident "AS" fetchStmt ;
 

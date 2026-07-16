@@ -203,6 +203,12 @@ ASTNodePtr Parser::parseCreate() {
     if (match(TokenType::TABLE)) {
         auto stmt = std::make_unique<CreateStatement>();
         stmt->table = consume(TokenType::IDENTIFIER, "table name").lexeme;
+        if (match(TokenType::AS)) {
+            auto sel = parseSelect();
+            stmt->asQuery = std::shared_ptr<SelectStatement>(
+                dynamic_cast<SelectStatement*>(sel.release()));
+            return stmt;
+        }
         consume(TokenType::LPAREN, "'('");
         do {
             stmt->columns.push_back(parseColumnDefinition());

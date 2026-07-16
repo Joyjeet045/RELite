@@ -540,7 +540,9 @@ void ExecutorEngine::materializeSubqueries(parser::Expression* expr) {
     } else if (auto* in = dynamic_cast<InExpr*>(expr)) {
         materializeSubqueries(in->value.get());
         for (auto& item : in->items) materializeSubqueries(item.get());
-        if (in->subquery) materializeSubquery(in->subquery.get());
+        if (in->subquery && !in->subquery->correlated) {
+            materializeSubquery(in->subquery.get());
+        }
     } else if (auto* bt = dynamic_cast<BetweenExpr*>(expr)) {
         materializeSubqueries(bt->value.get());
         materializeSubqueries(bt->lo.get());
@@ -549,8 +551,120 @@ void ExecutorEngine::materializeSubqueries(parser::Expression* expr) {
         materializeSubqueries(lk->value.get());
         materializeSubqueries(lk->pattern.get());
     } else if (auto* sq = dynamic_cast<SubqueryExpr*>(expr)) {
-        materializeSubquery(sq);
+        if (!sq->correlated) materializeSubquery(sq);
     }
+}
+
+bool ExecutorEngine::hasCorrelatedSubquery(parser::Expression* expr) const {
+    if (expr == nullptr) return false;
+    using namespace parser;
+    if (auto* b = dynamic_cast<BinaryExpr*>(expr)) {
+        return hasCorrelatedSubquery(b->left.get()) ||
+               hasCorrelatedSubquery(b->right.get());
+    } else if (auto* a = dynamic_cast<ArithmeticExpr*>(expr)) {
+        return hasCorrelatedSubquery(a->left.get()) ||
+               hasCorrelatedSubquery(a->right.get());
+    } else if (auto* l = dynamic_cast<LogicalExpr*>(expr)) {
+        return hasCorrelatedSubquery(l->left.get()) ||
+               hasCorrelatedSubquery(l->right.get());
+    } else if (auto* u = dynamic_cast<UnaryExpr*>(expr)) {
+        return hasCorrelatedSubquery(u->operand.get());
+    } else if (auto* i = dynamic_cast<IsNullExpr*>(expr)) {
+        return hasCorrelatedSubquery(i->operand.get());
+    } else if (auto* in = dynamic_cast<InExpr*>(expr)) {
+        if (in->subquery && in->subquery->correlated) return true;
+        if (hasCorrelatedSubquery(in->value.get())) return true;
+        for (auto& item : in->items) {
+            if (hasCorrelatedSubquery(item.get())) return true;
+        }
+        return false;
+    } else if (auto* bt = dynamic_cast<BetweenExpr*>(expr)) {
+        return hasCorrelatedSubquery(bt->value.get()) ||
+               hasCorrelatedSubquery(bt->lo.get()) ||
+               hasCorrelatedSubquery(bt->hi.get());
+    } else if (auto* lk = dynamic_cast<LikeExpr*>(expr)) {
+        return hasCorrelatedSubquery(lk->value.get()) ||
+               hasCorrelatedSubquery(lk->pattern.get());
+    } else if (auto* call = dynamic_cast<CallExpr*>(expr)) {
+        for (auto& arg : call->args) {
+            if (hasCorrelatedSubquery(arg.get())) return true;
+        }
+        return false;
+    } else if (auto* cs = dynamic_cast<CaseExpr*>(expr)) {
+        for (auto& br : cs->branches) {
+            if (hasCorrelatedSubquery(br.when.get()) ||
+                hasCorrelatedSubquery(br.then.get())) {
+                return true;
+            }
+        }
+        return hasCorrelatedSubquery(cs->elseExpr.get());
+    } else if (auto* col = dynamic_cast<ColumnRef*>(expr)) {
+        return hasCorrelatedSubquery(col->computed.get());
+    } else if (auto* sq = dynamic_cast<SubqueryExpr*>(expr)) {
+        return sq->correlated;
+    }
+    return false;
+}
+
+void ExecutorEngine::bindCorrelated(parser::Expression* expr,
+                                    const std::vector<Value>& outerRow) {
+    if (expr == nullptr) return;
+    using namespace parser;
+    if (auto* b = dynamic_cast<BinaryExpr*>(expr)) {
+        bindCorrelated(b->left.get(), outerRow);
+        bindCorrelated(b->right.get(), outerRow);
+    } else if (auto* a = dynamic_cast<ArithmeticExpr*>(expr)) {
+        bindCorrelated(a->left.get(), outerRow);
+        bindCorrelated(a->right.get(), outerRow);
+    } else if (auto* l = dynamic_cast<LogicalExpr*>(expr)) {
+        bindCorrelated(l->left.get(), outerRow);
+        bindCorrelated(l->right.get(), outerRow);
+    } else if (auto* u = dynamic_cast<UnaryExpr*>(expr)) {
+        bindCorrelated(u->operand.get(), outerRow);
+    } else if (auto* i = dynamic_cast<IsNullExpr*>(expr)) {
+        bindCorrelated(i->operand.get(), outerRow);
+    } else if (auto* in = dynamic_cast<InExpr*>(expr)) {
+        bindCorrelated(in->value.get(), outerRow);
+        for (auto& item : in->items) bindCorrelated(item.get(), outerRow);
+        if (in->subquery && in->subquery->correlated) {
+            bindSubquery(in->subquery.get(), outerRow);
+        }
+    } else if (auto* bt = dynamic_cast<BetweenExpr*>(expr)) {
+        bindCorrelated(bt->value.get(), outerRow);
+        bindCorrelated(bt->lo.get(), outerRow);
+        bindCorrelated(bt->hi.get(), outerRow);
+    } else if (auto* lk = dynamic_cast<LikeExpr*>(expr)) {
+        bindCorrelated(lk->value.get(), outerRow);
+        bindCorrelated(lk->pattern.get(), outerRow);
+    } else if (auto* call = dynamic_cast<CallExpr*>(expr)) {
+        for (auto& arg : call->args) bindCorrelated(arg.get(), outerRow);
+    } else if (auto* cs = dynamic_cast<CaseExpr*>(expr)) {
+        for (auto& br : cs->branches) {
+            bindCorrelated(br.when.get(), outerRow);
+            bindCorrelated(br.then.get(), outerRow);
+        }
+        bindCorrelated(cs->elseExpr.get(), outerRow);
+    } else if (auto* col = dynamic_cast<ColumnRef*>(expr)) {
+        bindCorrelated(col->computed.get(), outerRow);
+    } else if (auto* sq = dynamic_cast<SubqueryExpr*>(expr)) {
+        if (sq->correlated) bindSubquery(sq, outerRow);
+    }
+}
+
+void ExecutorEngine::bindSubquery(parser::SubqueryExpr* sub,
+                                  const std::vector<Value>& outerRow) {
+    for (parser::ColumnRef* ref : sub->outerRefs) {
+        if (ref->columnIndex >= 0 &&
+            ref->columnIndex < static_cast<int>(outerRow.size())) {
+            ref->boundValue = toCached(outerRow[ref->columnIndex]);
+            ref->bound = true;
+        } else {
+            ref->boundValue = parser::CachedValue{};
+            ref->bound = true;
+        }
+    }
+    sub->evaluated = false;
+    materializeSubquery(sub);
 }
 
 bool ExecutorEngine::parentHasValue(const std::string& refTable,
@@ -1369,7 +1483,17 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
         loadSchema(node.tableId, schema, names);
 
         if (!node.aggregates.empty() || !node.groupBy.empty() || node.having) {
-            auto arows = gatherBaseRows(node.tableId, schema, node.where.get());
+            std::vector<std::pair<RecordID, std::vector<Value>>> arows;
+            if (node.where && hasCorrelatedSubquery(node.where.get())) {
+                auto allRows = gatherBaseRows(node.tableId, schema, nullptr);
+                for (auto& pr : allRows) {
+                    bindCorrelated(node.where.get(), pr.second);
+                    Tuple t(pr.second);
+                    if (predicateTrue(*node.where, t)) arows.push_back(std::move(pr));
+                }
+            } else {
+                arows = gatherBaseRows(node.tableId, schema, node.where.get());
+            }
             std::vector<int> gcols;
             for (const auto& g : node.groupBy) gcols.push_back(g->columnIndex);
 
@@ -1441,7 +1565,16 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
             return;
         }
 
-        rows = gatherBaseRows(node.tableId, schema, node.where.get());
+        if (node.where && hasCorrelatedSubquery(node.where.get())) {
+            auto allRows = gatherBaseRows(node.tableId, schema, nullptr);
+            for (auto& pr : allRows) {
+                bindCorrelated(node.where.get(), pr.second);
+                Tuple t(pr.second);
+                if (predicateTrue(*node.where, t)) rows.push_back(std::move(pr));
+            }
+        } else {
+            rows = gatherBaseRows(node.tableId, schema, node.where.get());
+        }
     }
 
     if (!node.orderBy.empty()) {
@@ -1472,6 +1605,9 @@ void ExecutorEngine::visit(parser::SelectStatement& node) {
             projected.reserve(node.columns.size());
             for (const auto& col : node.columns) {
                 if (col->computed) {
+                    if (hasCorrelatedSubquery(col->computed.get())) {
+                        bindCorrelated(col->computed.get(), src);
+                    }
                     Tuple ct(src);
                     projected.push_back(evalExpression(*col->computed, ct));
                     continue;
@@ -1508,20 +1644,22 @@ void ExecutorEngine::visit(parser::DeleteStatement& node) {
     materializeSubqueries(node.where.get());
     const semantic::TableSchema* ts = catalog_.getTableById(node.tableId);
 
-    std::unique_ptr<AbstractExecutor> exec =
-        std::make_unique<SeqScanExecutor>(&storage_.tables(), node.tableId, schema);
-    if (node.where) {
-        exec = std::make_unique<FilterExecutor>(std::move(exec), node.where.get());
-    }
-
     std::vector<index::Index*> tableIndexes = storage_.indexes().forTable(node.tableId);
 
     std::vector<std::pair<RecordID, Tuple>> victims;
-    exec->init();
-    Tuple t;
-    RecordID rid;
-    while (exec->next(t, rid)) {
-        victims.emplace_back(rid, t);
+    const bool correlated = node.where && hasCorrelatedSubquery(node.where.get());
+    {
+        SeqScanExecutor scan(&storage_.tables(), node.tableId, schema);
+        scan.init();
+        Tuple t;
+        RecordID rid;
+        while (scan.next(t, rid)) {
+            if (node.where) {
+                if (correlated) bindCorrelated(node.where.get(), t.values());
+                if (!predicateTrue(*node.where, t)) continue;
+            }
+            victims.emplace_back(rid, t);
+        }
     }
 
     if (ts != nullptr) {
@@ -1567,7 +1705,17 @@ void ExecutorEngine::visit(parser::UpdateStatement& node) {
     const semantic::TableSchema* ts = catalog_.getTableById(node.tableId);
 
     std::vector<index::Index*> tableIndexes = storage_.indexes().forTable(node.tableId);
-    auto rows = gatherRows(node.tableId, schema, node.where.get());
+    std::vector<std::pair<RecordID, std::vector<Value>>> rows;
+    if (node.where && hasCorrelatedSubquery(node.where.get())) {
+        auto allRows = gatherRows(node.tableId, schema, nullptr);
+        for (auto& pr : allRows) {
+            bindCorrelated(node.where.get(), pr.second);
+            Tuple t(pr.second);
+            if (predicateTrue(*node.where, t)) rows.push_back(std::move(pr));
+        }
+    } else {
+        rows = gatherRows(node.tableId, schema, node.where.get());
+    }
 
     int count = 0;
     for (auto& [rid, row] : rows) {

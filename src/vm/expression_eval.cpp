@@ -192,6 +192,9 @@ Value evalExpression(const parser::Expression& expr, const Tuple& tuple) {
     }
 
     if (auto* col = dynamic_cast<const ColumnRef*>(&expr)) {
+        if (col->outerRef) {
+            return col->bound ? cachedToValue(col->boundValue) : Value::null();
+        }
         if (col->columnIndex < 0 || col->columnIndex >= static_cast<int>(tuple.size())) {
             return Value::null();
         }

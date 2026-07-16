@@ -76,6 +76,10 @@ private:
     void materializeSubqueries(parser::Expression* expr);
     void materializeSubquery(parser::SubqueryExpr* sub);
 
+    bool hasCorrelatedSubquery(parser::Expression* expr) const;
+    void bindCorrelated(parser::Expression* expr, const std::vector<Value>& outerRow);
+    void bindSubquery(parser::SubqueryExpr* sub, const std::vector<Value>& outerRow);
+
     bool parentHasValue(const std::string& refTable, const std::string& refColumn,
                         const Value& value);
     void checkForeignKeys(const semantic::TableSchema& schema,

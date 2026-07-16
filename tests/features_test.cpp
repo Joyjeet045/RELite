@@ -280,6 +280,27 @@ void run() {
         "FETCH dept, SUM(sal) OVER (PARTITION BY dept) AS tot FROM we WHEN dept = 'e';");
     assert(wsum.rows.size() == 3 && wsum.rows[0][1].intValue == 450);
 
+    /* Correlated subqueries: EXISTS, scalar-in-WHERE, and scalar-in-projection. */
+    h.run("BUILD RELATION cdept (id INT, dname TEXT);");
+    h.run("PUT INTO cdept VALUES (1,'a'),(2,'b'),(3,'c');");
+    h.run("BUILD RELATION cemp (id INT, did INT, sal INT);");
+    h.run("PUT INTO cemp VALUES (1,1,100),(2,1,200),(3,2,300),(4,2,150);");
+    auto cex = h.run(
+        "FETCH dname FROM cdept d WHEN EXISTS "
+        "(FETCH id FROM cemp e WHEN e.did = d.id) SORT BY dname;");
+    assert(cex.rows.size() == 2 && cex.rows[0][0].textValue == "a" &&
+           cex.rows[1][0].textValue == "b");
+    auto cwh = h.run(
+        "FETCH id FROM cemp e WHEN sal > "
+        "(FETCH AVG(sal) FROM cemp e2 WHEN e2.did = e.did) SORT BY id;");
+    assert(cwh.rows.size() == 2 && cwh.rows[0][0].intValue == 2 &&
+           cwh.rows[1][0].intValue == 3);
+    auto cpr = h.run(
+        "FETCH dname, (FETCH COUNT(*) FROM cemp e WHEN e.did = d.id) AS n "
+        "FROM cdept d SORT BY dname;");
+    assert(cpr.rows.size() == 3 && cpr.rows[0][1].intValue == 2 &&
+           cpr.rows[1][1].intValue == 2 && cpr.rows[2][1].intValue == 0);
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_feat.db");
     std::remove("relite_test_feat.wal");

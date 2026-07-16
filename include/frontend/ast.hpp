@@ -96,6 +96,10 @@ public:
 
     int columnIndex = -1;
 
+    bool outerRef = false;
+    mutable bool bound = false;
+    mutable CachedValue boundValue;
+
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -222,6 +226,9 @@ public:
     enum class Kind { Scalar, Exists };
     Kind kind = Kind::Scalar;
     std::unique_ptr<SelectStatement> query;
+
+    bool correlated = false;
+    std::vector<ColumnRef*> outerRefs;
 
     mutable bool evaluated = false;
     mutable std::vector<CachedValue> results;

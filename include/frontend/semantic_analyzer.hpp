@@ -68,6 +68,15 @@ private:
     std::vector<JoinScope> joinScopes_;
     bool nWayJoin_ = false;
 
+    struct OuterScope {
+        const TableSchema* schema = nullptr;
+        std::string alias;
+    };
+    std::vector<OuterScope> outerScopes_;
+    std::vector<parser::SubqueryExpr*> subqueryStack_;
+
+    bool resolveOuter(parser::ColumnRef& node);
+
     void checkPredicate(parser::Expression& expr);
 };
 

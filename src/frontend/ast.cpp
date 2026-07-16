@@ -139,6 +139,9 @@ std::string expressionToString(const Expression& e) {
         out += ") OVER";
         return out;
     }
+    if (auto* sq = dynamic_cast<const SubqueryExpr*>(&e)) {
+        return sq->kind == SubqueryExpr::Kind::Exists ? "EXISTS(...)" : "(subquery)";
+    }
     throw std::runtime_error("unsupported expression in CHECK constraint");
 }
 

@@ -65,6 +65,28 @@ SemanticAnalyzer::SemanticAnalyzer(Catalog& catalog) : catalog_(catalog) {}
 
 void SemanticAnalyzer::analyze(parser::ASTNode& node) { node.accept(*this); }
 
+bool SemanticAnalyzer::resolveOuter(parser::ColumnRef& node) {
+    for (auto it = outerScopes_.rbegin(); it != outerScopes_.rend(); ++it) {
+        const TableSchema* t = it->schema;
+        if (!node.table.empty() && node.table != t->name && node.table != it->alias) {
+            continue;
+        }
+        int idx = t->columnIndex(node.column);
+        if (idx < 0) continue;
+        node.outerRef = true;
+        node.columnIndex = idx;
+        node.resolvedType = t->columns[idx].type;
+        if (!subqueryStack_.empty()) {
+            parser::SubqueryExpr* sq = subqueryStack_.back();
+            sq->correlated = true;
+            sq->outerRefs.push_back(&node);
+        }
+        return true;
+    }
+    return false;
+}
+
+
 void SemanticAnalyzer::bindExpression(parser::Expression& expr,
                                       const std::string& tableName) {
     const TableSchema* table = catalog_.getTable(tableName);
@@ -124,6 +146,7 @@ void SemanticAnalyzer::visit(parser::ColumnRef& node) {
             }
         }
         if (foundScope == nullptr) {
+            if (resolveOuter(node)) return;
             throw SemanticError("unknown column '" + node.column + "'");
         }
         node.columnIndex = foundScope->offset + foundIdx;
@@ -167,20 +190,24 @@ void SemanticAnalyzer::visit(parser::ColumnRef& node) {
             node.resolvedType = rightTable_->columns[ri].type;
             return;
         }
+        if (resolveOuter(node)) return;
         throw SemanticError("unknown column '" + node.column + "'");
     }
 
     if (currentTable_ == nullptr) {
+        if (resolveOuter(node)) return;
         throw SemanticError("column reference '" + node.column +
                             "' has no table in scope");
     }
     if (!node.table.empty() && node.table != currentTable_->name &&
         node.table != currentAlias_) {
+        if (resolveOuter(node)) return;
         throw SemanticError("unknown table qualifier '" + node.table +
                             "' (expected '" + currentTable_->name + "')");
     }
     int idx = currentTable_->columnIndex(node.column);
     if (idx < 0) {
+        if (resolveOuter(node)) return;
         throw SemanticError("unknown column '" + node.column + "' in table '" +
                             currentTable_->name + "'");
     }
@@ -394,6 +421,14 @@ void SemanticAnalyzer::visit(parser::SubqueryExpr& node) {
     const TableSchema* savedRight = rightTable_;
     int savedLeftCount = leftColumnCount_;
     bool savedJoin = joinMode_;
+
+    bool pushedOuter = (currentTable_ != nullptr);
+    if (pushedOuter) outerScopes_.push_back({currentTable_, currentAlias_});
+    subqueryStack_.push_back(&node);
+
+    node.correlated = false;
+    node.outerRefs.clear();
+
     currentTable_ = nullptr;
     leftTable_ = nullptr;
     rightTable_ = nullptr;
@@ -406,6 +441,9 @@ void SemanticAnalyzer::visit(parser::SubqueryExpr& node) {
     rightTable_ = savedRight;
     leftColumnCount_ = savedLeftCount;
     joinMode_ = savedJoin;
+
+    subqueryStack_.pop_back();
+    if (pushedOuter) outerScopes_.pop_back();
 
     node.resolvedType =
         (node.kind == parser::SubqueryExpr::Kind::Exists) ? std::optional<DataType>(DataType::Bool)

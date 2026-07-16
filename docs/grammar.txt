@@ -212,7 +212,7 @@ Expressions (precedence climbing; loosest binding first)
   call        := ident "(" [ expression { "," expression } ] ")"
                | "CAST" "(" expression "AS" dataType ")" ;
 
-  subquery    := fetchStmt ;                  ; uncorrelated only
+  subquery    := fetchStmt ;                  ; may reference outer columns
   columnRef   := ident [ "." ident ] ;        ; optional table qualifier
   literal     := integer | float | string | "TRUE" | "FALSE" | "NULL" ;
 
@@ -246,8 +246,10 @@ Notes / intentional limitations
     within a partition for the ranking functions. Aggregate windows return the
     partition total (there is no explicit frame clause). Window queries read a
     single table.
-  * Subqueries are uncorrelated and appear as IN (FETCH ...), EXISTS (FETCH ...),
-    or a parenthesized scalar (FETCH ...), including inside MODIFY/REMOVE.
+  * Subqueries appear as IN (FETCH ...), EXISTS (FETCH ...), or a parenthesized
+    scalar (FETCH ...), including inside MODIFY/REMOVE and the FETCH list. A
+    subquery may be correlated: when its WHEN references a column from the
+    enclosing single-table query, it is re-evaluated for each outer row.
   * A few constructs need two-token lookahead (peekAt(1)):
       - `ident "("` distinguishes an aggregate call from a column reference.
       - `NOT` before IN / BETWEEN / LIKE (vs. a boolean NOT).

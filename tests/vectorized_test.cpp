@@ -165,6 +165,54 @@ void run() {
         (void)any;
     }
 
+    /* Vectorized hash GROUP BY: per-group aggregates folded over batches. */
+    {
+        h.run("BUILD RELATION grp (k INT, v INT);");
+        h.run("PUT INTO grp VALUES (1,10),(1,20),(2,5),(2,7),(2,3),(3,100);");
+        const semantic::TableSchema* gt = semantic::Catalog::instance().getTable("grp");
+        vm::Schema gs;
+        for (const auto& c : gt->columns) gs.push_back(c.type);
+
+        std::vector<vm::VecAggregate> aggs = {
+            {vm::VecAggregate::Kind::CountStar, -1},
+            {vm::VecAggregate::Kind::Sum, 1},
+        };
+        auto groups = vm::runVectorizedGroupAggregate(h.se, gt->tableId, gs,
+                                                      std::nullopt, {0}, aggs);
+        /* First-seen group order: k = 1, 2, 3; row = [k, count, sum]. */
+        assert(groups.size() == 3);
+        assert(groups[0][0].intValue == 1 && groups[0][1].intValue == 2 &&
+               groups[0][2].intValue == 30);
+        assert(groups[1][0].intValue == 2 && groups[1][1].intValue == 3 &&
+               groups[1][2].intValue == 15);
+        assert(groups[2][0].intValue == 3 && groups[2][1].intValue == 1 &&
+               groups[2][2].intValue == 100);
+    }
+
+    /* Vectorized hash join: build over one table, probe the other in batches. */
+    {
+        h.run("BUILD RELATION jl (id INT, name TEXT);");
+        h.run("BUILD RELATION jr (id INT, score INT);");
+        h.run("PUT INTO jl VALUES (1,'a'),(2,'b'),(3,'c');");
+        h.run("PUT INTO jr VALUES (2,20),(3,30),(3,35),(9,99);");
+        const semantic::TableSchema* lt = semantic::Catalog::instance().getTable("jl");
+        const semantic::TableSchema* rt = semantic::Catalog::instance().getTable("jr");
+        vm::Schema ls, rs2;
+        for (const auto& c : lt->columns) ls.push_back(c.type);
+        for (const auto& c : rt->columns) rs2.push_back(c.type);
+
+        /* Build on jl(id), probe with jr(id); row = jr cols ++ jl cols. */
+        auto joined = vm::runVectorizedHashJoin(h.se, lt->tableId, ls, 0,
+                                                rt->tableId, rs2, 0);
+        assert(joined.size() == 3);
+        assert(joined[0][0].intValue == 2 && joined[0][1].intValue == 20 &&
+               joined[0][2].intValue == 2 && joined[0][3].textValue == "b");
+        assert(joined[1][0].intValue == 3 && joined[1][1].intValue == 30 &&
+               joined[1][3].textValue == "c");
+        assert(joined[2][0].intValue == 3 && joined[2][1].intValue == 35 &&
+               joined[2][3].textValue == "c");
+    }
+
     semantic::Catalog::instance().reset();
     std::cout << "vectorized_test passed\n";
 }

@@ -63,4 +63,27 @@ std::vector<Value> runVectorizedAggregate(StorageEngine& storage, int tableId,
                                           const std::vector<VecAggregate>& aggregates,
                                           std::size_t batchSize = 1024);
 
+/*
+ * Run a vectorized hash GROUP BY over a single table. Each batch of rows is
+ * folded into a hash table keyed by the group columns; every group keeps its
+ * own aggregate accumulators. Returns one row per group in first-seen order:
+ * the group-key values followed by the aggregate values.
+ */
+std::vector<std::vector<Value>> runVectorizedGroupAggregate(
+    StorageEngine& storage, int tableId, const Schema& schema,
+    const std::optional<VecPredicate>& predicate,
+    const std::vector<int>& groupColumns,
+    const std::vector<VecAggregate>& aggregates, std::size_t batchSize = 1024);
+
+/*
+ * Run a vectorized inner equi-join of two tables on one column each. A hash
+ * table is built over the build side, then probe-side batches look up matches.
+ * Returns each matched pair as the probe row's columns followed by the build
+ * row's columns.
+ */
+std::vector<std::vector<Value>> runVectorizedHashJoin(
+    StorageEngine& storage, int buildTableId, const Schema& buildSchema,
+    int buildKeyColumn, int probeTableId, const Schema& probeSchema,
+    int probeKeyColumn, std::size_t batchSize = 1024);
+
 }

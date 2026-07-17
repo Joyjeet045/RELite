@@ -71,11 +71,12 @@ restarts.
   range scans and, by cardinality, between hash join and sort-merge join. The sort-merge
   path uses an external merge sort that spills to disk, and `EXPLAIN` reports the chosen
   plan
-- Vectorized aggregation and data skipping: a push-based, batch-at-a-time path for
-  ungrouped aggregates over a cached typed columnar store of contiguous primitive
-  arrays with null bitmaps. Per-block zone maps (min/max) let a predicate skip whole
-  blocks it cannot satisfy. `EXPLAIN` marks it as `Aggregate (Vectorized)` or
-  `Aggregate (Vectorized, Data Skipping)`
+- Vectorized execution and data skipping: a push-based, batch-at-a-time operator set
+  (filter, aggregate, hash GROUP BY, and hash join) over column batches with selection
+  vectors. Ungrouped aggregates run over a cached typed columnar store of contiguous
+  primitive arrays with null bitmaps, and per-block zone maps (min/max) let a predicate
+  skip whole blocks it cannot satisfy. `EXPLAIN` marks the aggregate path as
+  `Aggregate (Vectorized)` or `Aggregate (Vectorized, Data Skipping)`
 - Storage: 4 KB slotted pages, a disk manager, and an LRU buffer pool with page guards
   and page compaction
 - Indexing: page-resident, disk-backed B+ tree indexes whose nodes live in buffer-pool

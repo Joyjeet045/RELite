@@ -48,6 +48,7 @@ add_library(relite_core
     src/backend/durability.cpp
 )
 target_include_directories(relite_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(relite_core PUBLIC Threads::Threads)
 
 # ---------------------------------------------------------------------------
 # REPL executable.

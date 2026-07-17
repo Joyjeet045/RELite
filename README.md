@@ -78,7 +78,9 @@ restarts.
   (filter, aggregate, hash GROUP BY, and hash join) over column batches with selection
   vectors. Ungrouped aggregates run over a cached typed columnar store of contiguous
   primitive arrays with null bitmaps, and per-block zone maps (min/max) let a predicate
-  skip whole blocks it cannot satisfy. `EXPLAIN` marks the aggregate path as
+  skip whole blocks it cannot satisfy. Large aggregate scans are parallelized
+  morsel-by-morsel across worker threads, each folding its blocks into a private
+  accumulator before a final merge. `EXPLAIN` marks the aggregate path as
   `Aggregate (Vectorized)` or `Aggregate (Vectorized, Data Skipping)`
 - Storage: 4 KB slotted pages, a disk manager, and an LRU buffer pool with page guards
   and page compaction

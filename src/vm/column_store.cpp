@@ -1,6 +1,7 @@
 #include "vm/column_store.hpp"
 
 #include <algorithm>
+#include <thread>
 
 #include "vm/table_manager.hpp"
 
@@ -275,6 +276,181 @@ std::vector<Value> columnarAggregate(const TableColumns& table,
                 out.push_back(hasBest ? best : Value::null());
                 break;
         }
+    }
+    return out;
+}
+
+namespace {
+
+/* Partial accumulator folded independently per worker, then merged. */
+struct PartAcc {
+    std::int64_t count = 0;
+    std::int64_t isum = 0;
+    double dsum = 0.0;
+    bool isFloat = false;
+    bool hasBest = false;
+    Value best;
+};
+
+void accumulateRow(PartAcc& acc, const VecAggregate& agg, const TableColumns& table,
+                   std::size_t r) {
+    if (agg.kind == VecAggregate::Kind::CountStar) {
+        ++acc.count;
+        return;
+    }
+    const Column* col =
+        agg.column >= 0 && agg.column < static_cast<int>(table.columns.size())
+            ? &table.columns[agg.column]
+            : nullptr;
+    if (col == nullptr || col->isNull[r]) return;
+    switch (agg.kind) {
+        case VecAggregate::Kind::Count:
+            ++acc.count;
+            break;
+        case VecAggregate::Kind::Sum:
+        case VecAggregate::Kind::Avg:
+            if (col->type == parser::DataType::Float) {
+                acc.isFloat = true;
+                acc.dsum += col->doubles[r];
+            } else {
+                acc.isum += col->ints[r];
+            }
+            ++acc.count;
+            break;
+        case VecAggregate::Kind::Min:
+        case VecAggregate::Kind::Max: {
+            Value v = columnValue(*col, r);
+            if (!acc.hasBest) {
+                acc.best = v;
+                acc.hasBest = true;
+            } else {
+                auto cmp = compareValues(v, acc.best);
+                if (cmp.has_value()) {
+                    if (agg.kind == VecAggregate::Kind::Min && *cmp < 0) acc.best = v;
+                    if (agg.kind == VecAggregate::Kind::Max && *cmp > 0) acc.best = v;
+                }
+            }
+            break;
+        }
+        case VecAggregate::Kind::CountStar:
+            break;
+    }
+}
+
+void mergePartial(PartAcc& a, const PartAcc& b, VecAggregate::Kind kind) {
+    a.count += b.count;
+    a.isum += b.isum;
+    a.dsum += b.dsum;
+    a.isFloat = a.isFloat || b.isFloat;
+    if ((kind == VecAggregate::Kind::Min || kind == VecAggregate::Kind::Max) &&
+        b.hasBest) {
+        if (!a.hasBest) {
+            a.best = b.best;
+            a.hasBest = true;
+        } else {
+            auto cmp = compareValues(b.best, a.best);
+            if (cmp.has_value()) {
+                if (kind == VecAggregate::Kind::Min && *cmp < 0) a.best = b.best;
+                if (kind == VecAggregate::Kind::Max && *cmp > 0) a.best = b.best;
+            }
+        }
+    }
+}
+
+Value finalizePartial(const VecAggregate& agg, const PartAcc& acc) {
+    switch (agg.kind) {
+        case VecAggregate::Kind::CountStar:
+        case VecAggregate::Kind::Count:
+            return Value::makeInt(acc.count);
+        case VecAggregate::Kind::Sum:
+            if (acc.count == 0) return Value::null();
+            if (acc.isFloat) {
+                return Value::makeDouble(acc.dsum + static_cast<double>(acc.isum));
+            }
+            return Value::makeInt(acc.isum);
+        case VecAggregate::Kind::Avg:
+            if (acc.count == 0) return Value::null();
+            return Value::makeDouble((acc.dsum + static_cast<double>(acc.isum)) /
+                                     static_cast<double>(acc.count));
+        case VecAggregate::Kind::Min:
+        case VecAggregate::Kind::Max:
+            return acc.hasBest ? acc.best : Value::null();
+    }
+    return Value::null();
+}
+
+}  // namespace
+
+std::vector<Value> parallelColumnarAggregate(
+    const TableColumns& table, const std::vector<VecAggregate>& aggregates,
+    const std::optional<VecPredicate>& predicate, unsigned numThreads,
+    SkipStats* stats) {
+    const std::size_t B = TableColumns::kBlockRows;
+    const std::size_t nblocks = (table.rows + B - 1) / B;
+
+    std::vector<char> skip(nblocks, 0);
+    if (predicate) {
+        for (std::size_t b = 0; b < nblocks; ++b) {
+            skip[b] = blockSkippable(*predicate, table, b) ? 1 : 0;
+        }
+    }
+    if (stats != nullptr) {
+        stats->blocksTotal = nblocks;
+        stats->blocksSkipped = 0;
+        for (char s : skip) stats->blocksSkipped += (s != 0);
+    }
+
+    if (numThreads == 0) numThreads = 1;
+    if (nblocks == 0) {
+        std::vector<Value> out;
+        PartAcc empty;
+        for (const auto& agg : aggregates) out.push_back(finalizePartial(agg, empty));
+        return out;
+    }
+    numThreads = std::min<unsigned>(numThreads, static_cast<unsigned>(nblocks));
+
+    std::vector<std::vector<PartAcc>> partials(
+        numThreads, std::vector<PartAcc>(aggregates.size()));
+
+    auto worker = [&](unsigned t) {
+        for (std::size_t b = t; b < nblocks; b += numThreads) {
+            if (skip[b]) continue;
+            std::size_t start = b * B;
+            std::size_t end = std::min(start + B, table.rows);
+            for (std::size_t r = start; r < end; ++r) {
+                if (predicate) {
+                    bool ok = true;
+                    for (const VecPredicate::Term& term : predicate->terms) {
+                        if (term.column < 0 ||
+                            term.column >= static_cast<int>(table.columns.size()) ||
+                            !termPasses(term, table.columns[term.column], r)) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (!ok) continue;
+                }
+                for (std::size_t a = 0; a < aggregates.size(); ++a) {
+                    accumulateRow(partials[t][a], aggregates[a], table, r);
+                }
+            }
+        }
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve(numThreads - 1);
+    for (unsigned t = 1; t < numThreads; ++t) threads.emplace_back(worker, t);
+    worker(0);
+    for (auto& th : threads) th.join();
+
+    std::vector<Value> out;
+    out.reserve(aggregates.size());
+    for (std::size_t a = 0; a < aggregates.size(); ++a) {
+        PartAcc merged = partials[0][a];
+        for (unsigned t = 1; t < numThreads; ++t) {
+            mergePartial(merged, partials[t][a], aggregates[a].kind);
+        }
+        out.push_back(finalizePartial(aggregates[a], merged));
     }
     return out;
 }

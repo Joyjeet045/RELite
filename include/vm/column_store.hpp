@@ -78,4 +78,13 @@ std::vector<Value> columnarAggregate(const TableColumns& table,
                                      const std::optional<VecPredicate>& predicate,
                                      SkipStats* stats = nullptr);
 
+/* Morsel-driven parallel version of columnarAggregate: blocks are striped across
+ * worker threads, each folding its blocks into a private partial accumulator,
+ * after which the partials are merged. Integer aggregates match the serial
+ * result exactly; floating-point sums may differ only by summation order. */
+std::vector<Value> parallelColumnarAggregate(
+    const TableColumns& table, const std::vector<VecAggregate>& aggregates,
+    const std::optional<VecPredicate>& predicate, unsigned numThreads,
+    SkipStats* stats = nullptr);
+
 }

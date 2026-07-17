@@ -124,6 +124,38 @@ void run() {
         assert(viaSql.rows[0][0].intValue == 400);
     }
 
+    /* Morsel-driven parallel aggregation matches the serial result. */
+    {
+        const semantic::TableSchema* bt = semantic::Catalog::instance().getTable("big");
+        vm::Schema bs;
+        for (const auto& c : bt->columns) bs.push_back(c.type);
+        const vm::TableColumns& btc =
+            se.columns().getOrBuild(bt->tableId, bs, se.tables());
+
+        std::vector<vm::VecAggregate> aggs = {
+            {vm::VecAggregate::Kind::CountStar, -1},
+            {vm::VecAggregate::Kind::Sum, 0},
+            {vm::VecAggregate::Kind::Min, 0},
+            {vm::VecAggregate::Kind::Max, 0},
+        };
+        auto serial = vm::columnarAggregate(btc, aggs, std::nullopt);
+        auto par = vm::parallelColumnarAggregate(btc, aggs, std::nullopt, 4);
+        assert(par.size() == serial.size());
+        assert(par[0].intValue == serial[0].intValue && par[0].intValue == 2500);
+        assert(par[1].intValue == serial[1].intValue && par[1].intValue == 3123750);
+        assert(par[2].intValue == serial[2].intValue && par[2].intValue == 0);
+        assert(par[3].intValue == serial[3].intValue && par[3].intValue == 2499);
+
+        /* Parallel workers honor data skipping too. */
+        vm::VecPredicate pred;
+        pred.terms.push_back({0, parser::ComparisonOp::Geq, vm::Value::makeInt(2100)});
+        vm::SkipStats st;
+        auto parp = vm::parallelColumnarAggregate(
+            btc, {{vm::VecAggregate::Kind::CountStar, -1}}, pred, 4, &st);
+        assert(parp[0].intValue == 400);
+        assert(st.blocksSkipped == 2);
+    }
+
     semantic::Catalog::instance().reset();
     std::remove("relite_test_colstore.db");
     std::cout << "column_store_test passed\n";

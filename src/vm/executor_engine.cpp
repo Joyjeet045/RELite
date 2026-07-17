@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1782,7 +1783,17 @@ bool ExecutorEngine::tryVectorizedAggregate(parser::SelectStatement& node,
 
     const TableColumns& cols =
         storage_.columns().getOrBuild(node.tableId, schema, storage_.tables());
-    std::vector<Value> row = columnarAggregate(cols, aggs, predicate);
+    /* Large scans fan the columnar aggregation out across worker threads
+     * (morsel-driven parallelism); small ones stay serial to avoid overhead. */
+    constexpr std::size_t kParallelRowThreshold = 100000;
+    std::vector<Value> row;
+    if (cols.rows >= kParallelRowThreshold) {
+        unsigned n = std::thread::hardware_concurrency();
+        if (n == 0) n = 2;
+        row = parallelColumnarAggregate(cols, aggs, predicate, n);
+    } else {
+        row = columnarAggregate(cols, aggs, predicate);
+    }
 
     for (const auto& fn : node.aggregates) {
         result_.columns.push_back(fn->alias.empty() ? aggLabel(*fn) : fn->alias);

@@ -29,6 +29,7 @@ add_library(relite_core
     src/vm/version_store.cpp
     src/vm/vectorized.cpp
     src/vm/optimizer.cpp
+    src/vm/rewrite.cpp
     src/vm/column_store.cpp
     src/vm/expression_eval.cpp
     src/vm/executor.cpp

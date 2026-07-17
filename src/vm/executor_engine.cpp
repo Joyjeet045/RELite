@@ -17,6 +17,7 @@
 #include "vm/expression_eval.hpp"
 #include "vm/column_store.hpp"
 #include "vm/optimizer.hpp"
+#include "vm/rewrite.hpp"
 #include "vm/vectorized.hpp"
 
 namespace db::vm {
@@ -1804,6 +1805,7 @@ bool ExecutorEngine::tryVectorizedAggregate(parser::SelectStatement& node,
 }
 
 void ExecutorEngine::visit(parser::SelectStatement& node) {
+    optimizeSelect(node);
     if (node.explain) {
         explainSelect(node);
         return;

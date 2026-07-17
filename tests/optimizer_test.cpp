@@ -4,7 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "frontend/ast.hpp"
+#include "frontend/lexer.hpp"
+#include "frontend/parser.hpp"
 #include "vm/optimizer.hpp"
+#include "vm/rewrite.hpp"
 #include "vm/value.hpp"
 
 using namespace db;
@@ -75,6 +79,45 @@ void run() {
         assert(cm.chooseEquiJoin(500000, 800000) == vm::JoinAlgorithm::Merge);
         assert(cm.estimateCost(vm::JoinAlgorithm::NestedLoop, 1000, 1000) >
                cm.estimateCost(vm::JoinAlgorithm::Hash, 1000, 1000));
+    }
+
+    /* Rule optimizer: constant folding + boolean/arithmetic simplification. */
+    {
+        auto parse = [](const std::string& s) {
+            parser::Lexer lex(s);
+            parser::Parser p(lex.tokenize());
+            return p.parseWholeExpression();
+        };
+
+        /* Constant folding: 2 + 3 * 4 -> 14. */
+        auto folded = vm::rewriteExpression(parse("2 + 3 * 4"));
+        auto* lit = dynamic_cast<parser::LiteralExpr*>(folded.get());
+        assert(lit && lit->kind == parser::LiteralExpr::Kind::Integer &&
+               lit->intValue == 14);
+
+        /* Comparison folding: 1 = 1 -> TRUE, 2 > 5 -> FALSE. */
+        auto t = vm::rewriteExpression(parse("1 = 1"));
+        auto* tl = dynamic_cast<parser::LiteralExpr*>(t.get());
+        assert(tl && tl->kind == parser::LiteralExpr::Kind::Boolean && tl->boolValue);
+        auto f = vm::rewriteExpression(parse("2 > 5"));
+        auto* fl = dynamic_cast<parser::LiteralExpr*>(f.get());
+        assert(fl && fl->kind == parser::LiteralExpr::Kind::Boolean && !fl->boolValue);
+
+        /* Arithmetic identity: x + 0 -> x. */
+        auto id = vm::rewriteExpression(parse("x + 0"));
+        auto* cr = dynamic_cast<parser::ColumnRef*>(id.get());
+        assert(cr && cr->column == "x");
+
+        /* Boolean simplification: x > 5 AND 1 = 1 -> (x > 5). */
+        auto simp = vm::rewriteExpression(parse("x > 5 AND 1 = 1"));
+        auto* bin = dynamic_cast<parser::BinaryExpr*>(simp.get());
+        assert(bin && bin->op == parser::ComparisonOp::Gt);
+
+        /* Short-circuit: x > 5 AND 1 = 2 -> FALSE. */
+        auto sc = vm::rewriteExpression(parse("x > 5 AND 1 = 2"));
+        auto* scl = dynamic_cast<parser::LiteralExpr*>(sc.get());
+        assert(scl && scl->kind == parser::LiteralExpr::Kind::Boolean &&
+               !scl->boolValue);
     }
 
     std::cout << "optimizer_test passed\n";

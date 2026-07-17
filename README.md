@@ -67,10 +67,13 @@ restarts.
 - Front end: a hand-written lexer and recursive-descent parser (precedence climbing)
   producing an AST that is traversed with the visitor pattern, and a semantic analyzer
   that binds names and types against a per-database catalog
-- Execution: a Volcano/iterator engine with a cost-based optimizer that selects index
+- Optimization: rule-based rewrites run before execution (constant folding, boolean
+  short-circuiting, and arithmetic identities), and a cost-based optimizer selects index
   range scans and, by cardinality, between hash join and sort-merge join. The sort-merge
   path uses an external merge sort that spills to disk, and `EXPLAIN` reports the chosen
   plan
+- Execution: a Volcano/iterator engine over the row store, with the vectorized operators
+  below for analytical aggregates
 - Vectorized execution and data skipping: a push-based, batch-at-a-time operator set
   (filter, aggregate, hash GROUP BY, and hash join) over column batches with selection
   vectors. Ungrouped aggregates run over a cached typed columnar store of contiguous
